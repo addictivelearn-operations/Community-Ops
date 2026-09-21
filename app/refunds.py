@@ -22,7 +22,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from . import zoho
+from . import tracker_app, zoho
 from .config import TEAM, TEAM_HEADERS, settings
 from .config import RF_CURRENCY, RF_SUBJECT, RF_SUBJECT_NO_ORDER, RF_TEMPLATE, RF_TEMPLATE_NO_ORDER
 from .google import GoogleClient, GoogleError
@@ -337,12 +337,93 @@ def recipients() -> dict:
     return {"to": settings.team_to, "cc": settings.team_cc, "bcc": settings.team_bcc, "test": False}
 
 
+def _tracker_app_values(d: Handoff) -> dict:
+    """The finance sheet's row, by its own column names — what _append_tracker_row
+    writes, sent to the tracker app instead (Hardik, 21 Sep 2026: "whatever data
+    you are sending to the sheet, send it as it is")."""
+    h = TEAM_HEADERS
+    return {
+        h[TEAM.TIMESTAMP - 1]: _sheet_date(d.approved_at),
+        h[TEAM.APPROVER_EMAIL - 1]: d.approved_by_email,
+        h[TEAM.BRAND - 1]: d.brand,
+        h[TEAM.NAME - 1]: d.name,
+        h[TEAM.EMAIL - 1]: d.email,
+        h[TEAM.PHONE - 1]: d.phone,
+        h[TEAM.PRODUCT - 1]: d.community,
+        h[TEAM.REASON - 1]: d.reason,
+        h[TEAM.APPROVED_BY - 1]: d.approved_by,
+        h[TEAM.AMOUNT - 1]: d.amount,
+        h[TEAM.DEADLINE - 1]: _sheet_date(d.deadline),
+        h[TEAM.SOURCE_KEY - 1]: d.key,
+    }
+
+
+def run_handoff_to_tracker_app(g: GoogleClient, r: RefundRow, d: Handoff) -> Outcome:
+    """Steps 1–3 against the Master Refund Tracker app instead of the finance
+    sheet (Hardik, 21 Sep 2026). Same order, same never-twice rules: the row
+    is found by Source Key, the Doc is made only when the row has none, the
+    e-mail goes only when the row does not say Sent. The Doc and the e-mail
+    are unchanged except that their tracker link opens the learner in the
+    app (Phase 4 → Community Refund)."""
+    parts = []
+    h = TEAM_HEADERS
+    # 1. The row
+    try:
+        st = tracker_app.upsert(d.key, _tracker_app_values(d), d.approved_by, r.row)
+    except tracker_app.TrackerError as e:
+        return Outcome(False, f"Tracker app: {e}")
+    tracker_row = int(st.get("rowNumber") or 0)
+    parts.append(f"tracker app row {tracker_row}" + ("" if st.get("created") else " (already there)"))
+    d.tracker_row = tracker_row
+    tracker_url = st.get("url") or settings.tracker_url
+
+    # 2. Doc — only if the row has none
+    doc_url = st.get("docLink") or ""
+    if not doc_url:
+        try:
+            created = g.create_doc_from_html(settings.team_doc_title_prefix + d.name,
+                                             doc_html(d, tracker_url), settings.team_doc_folder_id)
+            doc_url = created.get("webViewLink") or f"https://docs.google.com/document/d/{created['id']}/edit"
+            warn = g.share_anyone_view(created["id"])
+            tracker_app.update(d.key, {h[TEAM.DOC_LINK - 1]: doc_url}, d.approved_by, "approval document created")
+            parts.append("doc created" + (f" ({warn})" if warn else ""))
+        except (GoogleError, tracker_app.TrackerError) as e:
+            return Outcome(False, " · ".join(parts) + f" · doc FAILED: {e}")
+
+    # 3. E-mail — only if the row does not say Sent
+    if (st.get("emailStatus") or "") == "Sent":
+        parts.append("email already sent")
+    else:
+        rc = recipients()
+        subject = f"Refund Approved for {d.name}"
+        if rc["test"]:
+            subject = "[TEST] " + subject
+        try:
+            g.send_mail(from_name="Refund Approval Alert", to=rc["to"], cc=rc["cc"], bcc=rc["bcc"],
+                        subject=subject, html=team_email_html(d, doc_url, tracker_url),
+                        reply_to=d.approved_by_email or None)
+            tracker_app.update(d.key, {h[TEAM.MAIL_STATUS - 1]: "Sent",
+                                       h[TEAM.MAIL_SENT_AT - 1]: _sheet_date(datetime.now(settings.tz))},
+                               d.approved_by, "finance e-mail sent")
+            parts.append("email sent to " + ", ".join(rc["to"]) + (" [TEST]" if rc["test"] else "")
+                         + f" from {g.email}")
+        except (GoogleError, tracker_app.TrackerError) as e:
+            return Outcome(False, " · ".join(parts) + f" · email FAILED: {e}")
+
+    return Outcome(True, " · ".join(parts))
+
+
 def run_handoff(g: GoogleClient, r: RefundRow, approver_name: str, approver_email: str) -> Outcome:
     if r.no_order:
         return Outcome(True, 'Skipped — "No order found" row, nothing for the team')
     if not r.name or not r.email:
         return Outcome(False, "Name or email missing on the row")
     d = handoff_data(r, approver_name, approver_email)
+    # The finance row goes to the Master Refund Tracker app when it is
+    # configured (Hardik, 21 Sep 2026); the sheet path below stays as the
+    # fallback and is untouched.
+    if tracker_app.configured():
+        return run_handoff_to_tracker_app(g, r, d)
     parts = []
 
     # 1. Tracker row

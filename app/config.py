@@ -238,6 +238,12 @@ class Settings:
     # GET /api/refunds.json with header X-Api-Key equal to this value returns
     # every refund row as JSON. Empty = the endpoint is switched off (503).
     export_api_key: str = _get("EXPORT_API_KEY", "")
+    # --- The Master Refund Tracker app (21 Sep 2026) --------------------------
+    # Where the finance hand-off row goes instead of the "Community Refunds
+    # Tracker" sheet: POST {TRACKER_URL}/api/community-refunds/handoff with
+    # X-Api-Key = TRACKER_API_KEY. Both empty = the sheet, exactly as before.
+    tracker_url: str = _get("TRACKER_URL", "").rstrip("/")
+    tracker_api_key: str = _get("TRACKER_API_KEY", "")
     team_doc_title_prefix: str = "Community Refund Approval Document - "
 
     # --- Ticket sync (port of zoho-desk-sync) --------------------------------

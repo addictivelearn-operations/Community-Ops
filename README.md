@@ -115,6 +115,13 @@ refund row as JSON for the Master Refund Tracker's "Community Refunds" tab.
 It needs the `X-Api-Key` header equal to `EXPORT_API_KEY` (set it on Railway;
 empty = off). It reads what the Refunds page reads and writes nothing.
 
+**Finance hand-off → the Master Refund Tracker app** (21 Sep 2026) — when
+`TRACKER_URL` and `TRACKER_API_KEY` are set, Trigger = Yes sends the finance
+row (the sheet's own 28 columns, as they were) to the tracker's Phase 4 →
+"Community Refund" tab instead of the Community Refunds Tracker sheet; the
+Doc link and the e-mail stamps are written back there too. The Zoho email,
+the Doc and the finance email are unchanged. Unset = the sheet, as before.
+
 **Diagnostics** — connectivity and configuration (reads only): Zoho
 reachability, a row/refund count from the app's database, and the finance
 spreadsheet and Doc folder opened by name.
