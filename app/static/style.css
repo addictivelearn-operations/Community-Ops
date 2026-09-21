@@ -132,3 +132,11 @@ table.bars tr:last-child td { border-bottom:none; }
 .bar-fill { position:absolute; left:0; top:0; bottom:0; background:var(--brand-2); opacity:.15; border-radius:0 4px 4px 0; }
 .bar-label { position:relative; font-variant-numeric:tabular-nums; white-space:nowrap; }
 .dash-empty { padding:14px; color:var(--mute); font-size:12.5px; }
+table.matrix { width:100%; border-collapse:collapse; font-size:12.5px; }
+table.matrix th, table.matrix td { padding:5px 8px; border-bottom:1px solid var(--line); text-align:right;
+                                   font-variant-numeric:tabular-nums; white-space:nowrap; }
+table.matrix th { position:sticky; top:0; font-size:11px; font-weight:600; color:var(--mute); background:var(--zebra); }
+table.matrix th:first-child, table.matrix td.name { text-align:left; }
+table.matrix td.name { max-width:170px; overflow:hidden; text-overflow:ellipsis; }
+table.matrix td.total { font-weight:700; }
+table.matrix tr:last-child td { border-bottom:none; }

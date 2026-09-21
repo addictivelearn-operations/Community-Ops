@@ -234,7 +234,8 @@ def dashboard(request: Request, u: User = Depends(require_user)):
     filter/recompute instantly in JS rather than round-tripping to the
     server on every filter change."""
     with get_conn() as c:
-        tickets = c.execute("SELECT created_at, course, category, trigger_value, sent_at FROM tickets").fetchall()
+        tickets = c.execute("SELECT created_at, course, category, trigger_value, sent_at, "
+                            "brand, owner, zoho_status FROM tickets").fetchall()
         refunds = c.execute("SELECT timestamp_at, community, amount FROM refunds").fetchall()
 
     ticket_data = []
@@ -245,7 +246,10 @@ def dashboard(request: Request, u: User = Depends(require_user)):
         ticket_data.append({"day": day, "month": day[:7],
                             "course": t["course"].strip() if t["course"] else "(blank)",
                             "category": t["category"].strip() if t["category"] else "(uncategorised)",
-                            "status": _ticket_status(t["sent_at"], t["trigger_value"])})
+                            "status": _ticket_status(t["sent_at"], t["trigger_value"]),
+                            "brand": t["brand"].strip() if t["brand"] else "(blank)",
+                            "agent": t["owner"].strip() if t["owner"] else "(unassigned)",
+                            "zohoStatus": t["zoho_status"].strip() if t["zoho_status"] else "(blank)"})
 
     refund_data = []
     for r in refunds:

@@ -52,6 +52,27 @@
         </table></div>
       </div>
     </div>
+    <div class="dash-breakdown">
+      <h3>By status</h3>
+      <div class="scroll-sm"><table class="bars">
+        <thead><tr><th>Status</th><th>Tickets</th></tr></thead>
+        <tbody id="tk-status"></tbody>
+      </table></div>
+    </div>
+    <div class="dash-breakdown">
+      <h3>By brand, status</h3>
+      <div class="scroll-sm"><table class="matrix">
+        <thead id="tk-brand-head"></thead>
+        <tbody id="tk-brand-status"></tbody>
+      </table></div>
+    </div>
+    <div class="dash-breakdown">
+      <h3>By agent, status</h3>
+      <div class="scroll-sm"><table class="matrix">
+        <thead id="tk-agent-head"></thead>
+        <tbody id="tk-agent-status"></tbody>
+      </table></div>
+    </div>
   </div>
 
   <div class="card dash-panel">
@@ -147,6 +168,53 @@
     }).join('');
   }
 
+  // Zoho status columns, fixed for the page's lifetime (computed once from
+  // ALL tickets) so the brand/agent matrix tables don't reflow columns as
+  // the filter changes — the four known statuses first in that order, then
+  // whatever else turns up, alphabetically.
+  const STATUS_PRIORITY = ['open', 'on hold', 'pending on student', 'closed'];
+  function statusColumns(rows) {
+    const set = new Set(rows.map(r => r.zohoStatus));
+    return [...set].sort((a, b) => {
+      const ia = STATUS_PRIORITY.indexOf(a.toLowerCase()), ib = STATUS_PRIORITY.indexOf(b.toLowerCase());
+      if (ia !== -1 || ib !== -1) return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
+      return a.localeCompare(b);
+    });
+  }
+
+  function matrixCount(rows, dimKey, statusCols) {
+    const m = new Map();
+    rows.forEach(r => {
+      const dim = r[dimKey];
+      if (!m.has(dim)) {
+        const rec = { total: 0 };
+        statusCols.forEach(s => { rec[s] = 0; });
+        m.set(dim, rec);
+      }
+      const rec = m.get(dim);
+      rec[r.zohoStatus] = (rec[r.zohoStatus] || 0) + 1;
+      rec.total += 1;
+    });
+    return [...m.entries()].sort((a, b) => b[1].total - a[1].total);
+  }
+
+  function renderMatrixHead(thead, dimLabel, statusCols) {
+    thead.innerHTML = `<tr><th>${esc(dimLabel)}</th>` +
+                       statusCols.map(s => `<th>${esc(s)}</th>`).join('') + '<th>Total</th></tr>';
+  }
+
+  function renderMatrix(tbody, pairs, statusCols) {
+    if (!pairs.length) {
+      tbody.innerHTML = `<tr><td class="dash-empty" colspan="${statusCols.length + 2}">Nothing in this range.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = pairs.map(([name, rec]) =>
+      `<tr><td class="name" title="${esc(name)}">${esc(name)}</td>` +
+      statusCols.map(s => `<td>${rec[s] || 0}</td>`).join('') +
+      `<td class="total">${rec.total}</td></tr>`
+    ).join('');
+  }
+
   // A day/month filter wired to one panel's radios + two <select multiple>s.
   // Calls onChange(visibleRows) once at setup and again on every interaction.
   function setupFilter(prefix, rows, onChange) {
@@ -197,6 +265,10 @@
     fire();
   }
 
+  const TK_STATUS_COLS = statusColumns(TICKETS);
+  renderMatrixHead(document.getElementById('tk-brand-head'), 'Brand', TK_STATUS_COLS);
+  renderMatrixHead(document.getElementById('tk-agent-head'), 'Agent', TK_STATUS_COLS);
+
   setupFilter('tk', TICKETS, function (rows) {
     document.getElementById('tk-total').textContent = rows.length;
     document.getElementById('tk-sent').textContent = rows.filter(r => r.status === 'sent').length;
@@ -204,6 +276,9 @@
     document.getElementById('tk-na').textContent = rows.filter(r => r.status === 'na').length;
     renderCountBars(document.getElementById('tk-course'), groupCount(rows, 'course'));
     renderCountBars(document.getElementById('tk-category'), groupCount(rows, 'category'));
+    renderCountBars(document.getElementById('tk-status'), groupCount(rows, 'zohoStatus'));
+    renderMatrix(document.getElementById('tk-brand-status'), matrixCount(rows, 'brand', TK_STATUS_COLS), TK_STATUS_COLS);
+    renderMatrix(document.getElementById('tk-agent-status'), matrixCount(rows, 'agent', TK_STATUS_COLS), TK_STATUS_COLS);
   });
 
   setupFilter('rf', REFUNDS, function (rows) {
