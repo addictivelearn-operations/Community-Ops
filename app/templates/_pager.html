@@ -1,0 +1,11 @@
+{# expects: base (url without page), total, page, pages, first, last #}
+<div class="pager">
+  <span class="small mute">{% if total %}Rows {{ first }}–{{ last }} of {{ total }}{% else %}0 rows{% endif %}</span>
+  {% if pages > 1 %}
+  <span>
+    {% if page > 1 %}<a class="btn" href="{{ base }}&page={{ page - 1 }}">← Previous {{ 300 }}</a>{% endif %}
+    <span class="small mute">page {{ page }} of {{ pages }}</span>
+    {% if page < pages %}<a class="btn" href="{{ base }}&page={{ page + 1 }}">Next {{ 300 }} →</a>{% endif %}
+  </span>
+  {% endif %}
+</div>

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Sign in · Community Ops{% endblock %}
+{% block body %}
+<div class="card" style="max-width:520px;margin:60px auto">
+  <h1>Community Ops</h1>
+  <p class="mute">Refund approvals and ticket replies for the Community Team. Sign in with your
+    work Google account — the app reads and writes the sheets as you, and sends the finance
+    email from your Gmail.</p>
+  {% if missing %}
+  <div class="warn"><b>Not configured yet.</b> Missing in <code>.env</code>:
+    <ul>{% for m in missing %}<li>{{ m }}</li>{% endfor %}</ul>
+    Copy <code>.env.example</code> to <code>.env</code> and fill these in, then restart.</div>
+  {% else %}
+  <p><a class="btn" href="/auth/google?next={{ next | urlencode }}">Sign in with Google</a></p>
+  <p class="small mute">Allowed: {{ settings.allowed_domains | join(", ") }} accounts listed in AUTHORIZED_SENDERS.</p>
+  {% endif %}
+</div>
+{% endblock %}

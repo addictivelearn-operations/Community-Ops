@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Ticket #{{ t.ticket }} · {{ t.name }}{% endblock %}
+{% block body %}
+<p><a href="/replies">← Ticket replies</a></p>
+<h1>#{{ t.ticket }} · {{ t.name }} <span class="mute small">row {{ t.row }}</span></h1>
+
+<form method="post" action="/replies/{{ t.row }}/save" id="edit"
+      onsubmit="var s=document.getElementById('trigger').value.toLowerCase()==='yes' && !{{ 'true' if t.sent else 'false' }};
+                return !s || confirm('Trigger is Yes and this row has not been sent.\n\nSave, then send the reply on ticket #{{ t.ticket }} to {{ t.email }} from {{ from_address }} and close it?');">
+<div class="card">
+  <div class="kv">
+    <div>A · Ticket</div><div><a href="/tickets/{{ t.ticket }}" target="_blank" rel="noopener">#{{ t.ticket }} — view the full Zoho conversation ↗</a> <span class="small mute">(new tab)</span></div>
+    <div>B · Owner</div><div>{{ t.owner or '—' }}</div>
+    <div>C · Ticket date</div><div>{{ t.created }}</div>
+    <div>D · Entered in sheet</div><div>{{ t.imported_at or '—' }}</div>
+    <div>E · Brand</div><div>{{ t.brand }} <span class="mute small">→ reply from <b>{{ from_address or '(unmapped)' }}</b></span></div>
+    <div>F · Learner</div><div>{{ t.name }}</div>
+    <div>G · Email</div><div>{{ t.email }}</div>
+    <div>H · Phone</div><div>{{ t.phone }}</div>
+    <div>I · Course</div><div><input name="course" value="{{ t.course }}"></div>
+    <div>J · Requirement</div><div><textarea name="requirement" rows="3">{{ t.requirement }}</textarea></div>
+    <div>K · Resolution</div><div><textarea name="resolution" rows="6" placeholder="What goes into the email as the Response">{{ t.resolution }}</textarea></div>
+    <div>L · Resolution status</div><div>
+      {% if status_options %}
+      <select name="res_status">
+        <option value="" {{ 'selected' if not t.res_status }}></option>
+        {% for o in status_options %}<option value="{{ o }}" {{ 'selected' if t.res_status == o }}>{{ o }}</option>{% endfor %}
+        {% if t.res_status and t.res_status not in status_options %}<option value="{{ t.res_status }}" selected>{{ t.res_status }}</option>{% endif %}
+      </select>
+      {% else %}<input name="res_status" value="{{ t.res_status }}">{% endif %}
+    </div>
+    <div>M · Trigger Email</div><div>
+      <select name="trigger" id="trigger" class="trig {{ t.trigger | lower }}" onchange="this.className='trig '+this.value.toLowerCase(); document.getElementById('savebtn').textContent = (this.value.toLowerCase()==='yes' && !{{ 'true' if t.sent else 'false' }}) ? 'Save & send reply' : 'Save';">
+        <option value="" {{ 'selected' if not t.trigger }}></option>
+        {% for o in trigger_options %}<option value="{{ o }}" {{ 'selected' if t.trigger == o }}>{{ o }}</option>{% endfor %}
+        {% if t.trigger and t.trigger not in trigger_options %}<option value="{{ t.trigger }}" selected>{{ t.trigger }}</option>{% endif %}
+      </select>
+      <span class="small mute">Yes sends (if not already sent) — same as in the sheet.</span>
+    </div>
+    <div>N · Sent</div><div class="wrap">{{ t.sent_at or '—' }}</div>
+    <div>O · Trigger by</div><div>{{ t.sent_by or '—' }}</div>
+    <div>Q · Category</div><div>{{ t.category or '—' }}</div>
+    <div>R · Reply status</div><div>{{ t.result or '—' }}</div>
+    <div>T · Zoho status</div><div>{{ t.zoho_status or '—' }}</div>
+  </div>
+  <div class="actions">
+    <button class="primary" id="savebtn">{{ 'Save & send reply' if (t.trigger | lower == 'yes' and not t.sent) else 'Save' }}</button>
+    {% if blockers %}<span class="warn">Sending would be refused — missing: {{ blockers | join(', ') }}</span>{% endif %}
+    <span class="small mute">Writes only the cells you changed (I, J, K, L, M).</span>
+  </div>
+</div>
+</form>
+
+{% if t.sent %}
+<div class="card">
+  <p><span class="badge sent">Sent</span> {{ t.last_sent_line }}</p>
+  <form method="post" action="/replies/{{ t.row }}/send" class="actions"
+        onsubmit="return confirm('This ticket was ALREADY replied to on {{ t.last_sent_line }}. Send the reply AGAIN to {{ t.email }}?')">
+    <input type="hidden" name="resend" value="1">
+    <button class="danger">Send again</button>
+    <span class="small mute">Same as the sheet menu's "Send reply AGAIN" — stacks a new timestamp in Column N.</span>
+  </form>
+</div>
+{% endif %}
+
+<h2>Email preview <span class="mute small">(uses the saved Column K — save first to refresh)</span></h2>
+<div class="preview">{{ preview | safe }}</div>
+{% endblock %}

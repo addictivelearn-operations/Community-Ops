@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Diagnostics · Community Ops{% endblock %}
+{% block body %}
+<h1>Diagnostics</h1>
+{% if missing %}<div class="warn">Missing in .env: {{ missing | join('; ') }}</div>{% endif %}
+<div class="card"><div class="kv">
+{% for k, v in checks.items() %}<div>{{ k }}</div><div class="wrap">{{ v }}</div>{% endfor %}
+</div></div>
+<p class="small mute">Everything above only reads. "CANNOT OPEN" on a spreadsheet or folder means your account has no access to it — ask for edit access (spreadsheets) or view access (folder). The ticket tracker and Community Refund data live in the app's own database now, not a sheet, so there's nothing to open for those.</p>
+
+<h2>Data migration</h2>
+<div class="card">
+  <form method="post" action="/admin/migrate" class="actions"
+        onsubmit="return confirm('Copy every row still only in the two sheets (ticket tracker from row 400, Community Refund from row 2) into the app database? Already-migrated rows are skipped, not duplicated — safe to run again.')">
+    <button>Migrate sheet rows into the database</button>
+    <span class="small mute">One-off / re-runnable. Reads the two sheets, writes only new rows into data/ops.db.</span>
+  </form>
+</div>
+
+<h2>Sync pipeline</h2>
+<div class="card" style="display:flex; flex-direction:column; gap:10px;">
+  <form method="post" action="/admin/sync/tickets" class="actions">
+    <button>Run ticket sync now</button>
+    <span class="small mute">Pulls new Community Team tickets from Zoho, extracts learner details, inserts into the database. Also runs on the schedule (see HANDOVER.txt / README §3a).</span>
+  </form>
+  <form method="post" action="/admin/sync/statuses" class="actions">
+    <button>Refresh ticket statuses/owners now</button>
+    <span class="small mute">Updates status and owner for recently-modified tickets already in the database.</span>
+  </form>
+  <form method="post" action="/admin/sync/refunds" class="actions"
+        onsubmit="return confirm('Run this only AFTER \'Migrate sheet rows into the database\' above has been run at least once. Running it first would insert rows with blank trigger/sent state for refunds that were actually already sent from the sheet, risking a learner being emailed twice. Continue?')">
+    <button>Run refund intake now</button>
+    <span class="small mute">Mirrors new rows from Refund_Clean into the refunds table. Needs the unattended sync identity above to have signed into this app at least once. Run the migration above FIRST — see the confirm prompt.</span>
+  </form>
+  <form method="post" action="/admin/sync/course-master" class="actions">
+    <button>Refresh course master now</button>
+    <span class="small mute">Re-reads the external Course Master sheet into the local mirror used for course-name lookups.</span>
+  </form>
+</div>
+{% endblock %}

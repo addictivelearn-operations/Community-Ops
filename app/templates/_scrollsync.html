@@ -1,0 +1,14 @@
+{# a second horizontal scrollbar ABOVE the table, kept in step with the table's own #}
+<div class="topscroll" id="topscroll"><div id="topscroll-inner"></div></div>
+<script>
+(function () {
+  var top = document.getElementById('topscroll'), inner = document.getElementById('topscroll-inner');
+  var box = document.querySelector('.scroll'), table = box && box.querySelector('table');
+  if (!top || !box || !table) return;
+  function size() { inner.style.width = table.scrollWidth + 'px'; }
+  size(); window.addEventListener('resize', size);
+  var lock = false;
+  top.addEventListener('scroll', function () { if (lock) return; lock = true; box.scrollLeft = top.scrollLeft; lock = false; });
+  box.addEventListener('scroll', function () { if (lock) return; lock = true; top.scrollLeft = box.scrollLeft; lock = false; });
+})();
+</script>

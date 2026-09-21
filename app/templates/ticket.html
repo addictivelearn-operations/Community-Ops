@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Ticket #{{ number }}{% endblock %}
+{% block body %}
+<p class="small mute">Opened in its own tab — close it when done. <a href="/replies">Ticket replies</a></p>
+<h1>#{{ number }} · {{ t.subject or '(no subject)' }}</h1>
+<p class="mute">
+  <span class="badge {{ 'yes' if 'open' in (t.status or '')|lower else 'na' }}">{{ t.status or 'Unknown' }}</span>
+  {% if dept %} · {{ dept }}{% endif %}{% if contact %} · {{ contact }}{% endif %}{% if t.email %} · {{ t.email }}{% endif %}
+  {% if t.createdTime %} · created {{ zoho_time(t.createdTime) }}{% endif %}
+</p>
+<p class="small mute">Newest first · <span style="color:#2f6fed">■</span> learner &nbsp;<span style="color:#1f9d55">■</span> support &nbsp;<span style="color:#9aa0a6">■</span> comment &nbsp;<span style="color:#e0a41c">■</span> internal note &nbsp;<span style="color:#d93025">■</span> draft (never sent)</p>
+{% for b in blocks %}
+<div class="msg {{ b.cls }}">
+  <div class="who">{{ b.who }}{% if b.tag %}<span class="tag">{{ b.tag }}</span>{% endif %}</div>
+  <div class="when">{{ zoho_time(b.when) }}</div>
+  <div class="text">{{ b.text or '(empty)' }}</div>
+  {% if b.attachments %}<div class="small mute">Attachments: {{ b.attachments | join(', ') }}</div>{% endif %}
+</div>
+{% else %}
+<div class="msg"><span class="mute">No conversation on this ticket.</span></div>
+{% endfor %}
+{% endblock %}

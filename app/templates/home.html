@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Today</h1>
+<div class="cards">
+  <a class="card" href="/refunds?view=open"><span class="mute">Refund requests, not yet emailed</span><b>{{ refund_new + refund_pending }}</b>
+    <span class="small mute">{{ refund_pending }} marked Yes in the sheet but never sent · {{ refund_total }} rows in total</span></a>
+  <a class="card" href="/replies?view=pending"><span class="mute">Ticket replies marked Yes, not yet sent</span><b>{{ reply_pending }}</b>
+    <span class="small mute">{{ reply_total }} tickets since row {{ settings.main_first_row }}</span></a>
+</div>
+<div class="card">
+  <h2 style="margin-top:0">How this fits with the sheet</h2>
+  <p>The sheet keeps working exactly as before. Approving here writes the same columns the sheet's
+    automation writes (O/P/Q/R on <i>Community Refund</i>, N/O/R on the main tab), so a row approved
+    in either place looks the same in both, and neither can send a row the other already sent.</p>
+  <p>One difference: the finance email is sent from <b>your</b> Gmail when you approve here, not from
+    the trigger owner's.</p>
+</div>
+{% endblock %}

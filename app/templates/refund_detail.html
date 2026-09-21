@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Refund row {{ r.row }} · {{ r.name }}{% endblock %}
+{% block body %}
+<p><a href="/refunds">← Refunds</a></p>
+<h1>{{ r.name }} <span class="mute small">row {{ r.row }}</span></h1>
+
+<div class="card">
+  <div class="kv">
+    <div>A · Submitted</div><div>{{ r.timestamp }}</div>
+    <div>B · Name</div><div>{{ r.name }}</div>
+    <div>C · Email</div><div>{{ r.email }}</div>
+    <div>D · Phone</div><div>{{ r.phone }}</div>
+    <div>E · Group (as typed)</div><div>{{ r.group }}</div>
+    <div>F · Reason</div><div class="wrap">{{ r.reason }}</div>
+    <div>G · Funnel</div><div>{{ r.funnel }}</div>
+    <div>H · Funnel final</div><div>{{ r.funnel_final }}
+      {% if r.no_order %}<span class="badge bad">no order found → refill-the-form email, no team handoff</span>{% endif %}</div>
+    <div>I · Group</div><div>
+      <form method="post" action="/refunds/{{ r.row }}/community" class="inline" style="display:flex;gap:8px;align-items:center">
+        <input name="value" value="{{ r.community }}" style="max-width:420px">
+        <button>Save I</button>
+        <span class="small mute">feeds the learner email and the brand formula in K</span>
+      </form></div>
+    <div>J · Amount</div><div>{{ r.amount }}</div>
+    <div>K · Brand</div><div>{{ r.brand or '— (the sheet formula found none)' }}</div>
+    <div>L</div><div>{{ r.spare_l }}</div>
+    <div>M</div><div>{{ r.spare_m }}</div>
+    <div>N · Trigger Email</div><div>
+      <form method="post" action="/refunds/{{ r.row }}/trigger" class="inline"
+            onsubmit="var v=this.value.value.toLowerCase(); return !(v==='yes' && !{{ 'true' if r.sent else 'false' }}) || confirm('Approve row {{ r.row }}?\n\n1. Zoho email to {{ r.email }} from {{ settings.rf_from_address }} (ticket created in No Reply and closed).\n{% if not r.no_order %}2. Tracker row + Google Doc + finance email to {{ recipients.to | join(', ') }}{% if recipients.test %} [TEST]{% endif %}, sent from {{ user.email }}.{% else %}2. No team handoff (no order found).{% endif %}');">
+        <input type="hidden" name="back_to" value="/refunds/{{ r.row }}">
+        <select name="value" class="trig {{ r.trigger | lower }}">
+          <option value="" {{ 'selected' if not r.trigger }}></option>
+          {% for o in trigger_options %}<option value="{{ o }}" {{ 'selected' if r.trigger == o }}>{{ o }}</option>{% endfor %}
+          {% if r.trigger and r.trigger not in trigger_options %}<option value="{{ r.trigger }}" selected>{{ r.trigger }}</option>{% endif %}
+        </select>
+        <button class="primary">{{ 'Save' if r.sent else 'Save (Yes = approve & send)' }}</button>
+      </form>
+      {% if blockers and not r.sent %}<div class="warn" style="margin-top:8px">Yes would be refused — missing: {{ blockers | join(', ') }}. Fix the row in the sheet, then reload.</div>{% endif %}
+    </div>
+    <div>O · Sent</div><div>{{ r.sent_at or '—' }}</div>
+    <div>P · Trigger by</div><div>{{ r.sent_by or '—' }}</div>
+    <div>Q · Reply status</div><div>{{ r.result or '—' }}</div>
+    <div>R · Team handoff</div><div>{{ r.handoff or '—' }}</div>
+  </div>
+</div>
+
+{% if r.sent and not r.no_order %}
+<div class="card">
+  <p><span class="badge sent">Learner emailed</span> on {{ r.sent_at.splitlines()[0] }} — cannot be emailed again from here.</p>
+  <form method="post" action="/refunds/{{ r.row }}/handoff" class="actions"
+        onsubmit="return confirm('Retry the team handoff for row {{ r.row }}? Only what is missing on the tracker row is done (row, doc, email). The email goes out from {{ user.email }}.')">
+    <button>Retry team handoff</button>
+    <span class="small mute">Same as the sheet menu's "Retry team handoff" — reuses an existing tracker row, doc or sent email, never duplicates.</span>
+  </form>
+</div>
+{% endif %}
+
+<h2>Email to the learner — from {{ settings.rf_from_address }}</h2>
+<p class="small mute">Subject: {{ learner_subject }}</p>
+<div class="preview">{{ learner_html | safe }}</div>
+
+{% if not r.no_order %}
+<h2>Email to the finance team — from {{ user.email }}</h2>
+<p class="small mute">To: {{ recipients.to | join(', ') }}{% if recipients.test %} <b>(RF_TEAM_TEST_TO override)</b>{% endif %}<br>
+  Cc: {{ recipients.cc | join(', ') or '(none)' }}<br>
+  Bcc: {{ recipients.bcc | join(', ') or '(none)' }}<br>
+  Reply-To: {{ reply_to or '(none)' }}</p>
+<div class="preview">{{ team_html | safe }}</div>
+{% endif %}
+{% endblock %}

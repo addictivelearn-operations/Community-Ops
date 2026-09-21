@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Refunds · Community Ops{% endblock %}
+{% block body %}
+{% set base = "/refunds?view=" ~ view ~ "&q=" ~ (q | urlencode) %}
+{% set here = base ~ "&page=" ~ page %}
+<h1>Community refunds <span class="mute small">— "Community Refund" tab</span></h1>
+<div class="tabs">
+  <a href="/refunds?view=open&q={{ q | urlencode }}" class="{{ 'on' if view == 'open' }}">Not yet emailed</a>
+  <a href="/refunds?view=sent&q={{ q | urlencode }}" class="{{ 'on' if view == 'sent' }}">Emailed</a>
+  <a href="/refunds?view=all&q={{ q | urlencode }}" class="{{ 'on' if view == 'all' }}">All</a>
+  <form method="get" action="/refunds" style="display:inline-block">
+    <input type="hidden" name="view" value="{{ view }}">
+    <input name="q" value="{{ q }}" placeholder="name, email, community, phone" class="search">
+  </form>
+</div>
+<p class="small mute">Every column of the sheet. A–J come from the form and K from the sheet's formula;
+  <b>I (Group)</b> can be corrected in place (saved when you click away); <b>N (Trigger)</b> set to <b>Yes</b> sends, exactly as in the sheet.</p>
+{% include "_pager.html" %}
+{% include "_scrollsync.html" %}
+<div class="scroll">
+<table class="grid">
+<thead><tr><th>Row</th>{% for col, label in headers %}<th title="Column {{ col }}">{{ col }}{% if label %} · {{ label }}{% endif %}</th>{% endfor %}</tr></thead>
+<tbody>
+{% for r in rows %}
+<tr>
+  <td><a href="/refunds/{{ r.row }}">{{ r.row }}</a></td>
+  <td class="nowrap">{{ r.timestamp }}</td>
+  <td><a href="/refunds/{{ r.row }}">{{ r.name }}</a></td>
+  <td>{{ r.email }}</td>
+  <td>{{ r.phone }}</td>
+  <td class="clip" title="{{ r.group }}">{{ r.group }}</td>
+  <td class="clip" title="{{ r.reason }}">{{ r.reason }}</td>
+  <td class="clip" title="{{ r.funnel }}">{{ r.funnel }}</td>
+  <td class="clip" title="{{ r.funnel_final }}">{{ r.funnel_final }}{% if r.no_order %} <span class="badge bad">no order</span>{% endif %}</td>
+  <td class="edit"><input class="cellbox" data-row="{{ r.row }}" data-field="community" value="{{ r.community }}"
+        placeholder="community name" title="Saved to Column I when you click away — feeds the learner email and the brand formula"><span class="saved"></span></td>
+  <td>{{ r.amount }}</td>
+  <td>{{ r.brand }}</td>
+  <td>{{ r.spare_l }}</td>
+  <td>{{ r.spare_m }}</td>
+  <td>
+    <form method="post" action="/refunds/{{ r.row }}/trigger" class="inline">
+      <input type="hidden" name="back_to" value="{{ here }}">
+      <select name="value" class="trig {{ r.trigger | lower }}"
+              onchange="if (this.value.toLowerCase() === 'yes' && !{{ 'true' if r.sent else 'false' }}) { if (!confirm('Approve row {{ r.row }} ({{ r.name }})?\n\nZoho email to {{ r.email }}{% if not r.no_order %}, then tracker row + Doc + finance email from {{ user.email }}{% endif %}.')) { this.value = this.dataset.was; return; } } this.form.submit();"
+              data-was="{{ r.trigger }}">
+        <option value="" {{ 'selected' if not r.trigger }}></option>
+        {% for o in trigger_options %}<option value="{{ o }}" {{ 'selected' if r.trigger == o }}>{{ o }}</option>{% endfor %}
+        {% if r.trigger and r.trigger not in trigger_options %}<option value="{{ r.trigger }}" selected>{{ r.trigger }}</option>{% endif %}
+      </select>
+    </form>
+  </td>
+  <td class="nowrap">{{ r.sent_at.splitlines()[0] if r.sent_at else '' }}</td>
+  <td>{{ r.sent_by }}</td>
+  <td class="clip" title="{{ r.result }}">{{ r.result }}</td>
+  <td class="clip" title="{{ r.handoff }}">{{ r.handoff }}</td>
+</tr>
+{% else %}
+<tr><td colspan="{{ headers | length + 1 }}" class="mute">Nothing here.</td></tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+{% set base = here %}{% include "_pager.html" %}
+<script>
+(function () {
+  document.querySelectorAll('input.cellbox').forEach(function (el) {
+    el.dataset.was = el.value;
+    el.addEventListener('blur', function () {
+      if (el.value === el.dataset.was) return;
+      el.dataset.was = el.value;
+      var mark = el.nextElementSibling;
+      mark.textContent = '…'; mark.className = 'saved';
+      fetch('/refunds/' + el.dataset.row + '/cell', { method: 'POST',
+        body: new URLSearchParams({ field: el.dataset.field, value: el.value }) })
+        .then(function (r) { return r.json(); })
+        .then(function (j) { mark.textContent = j.ok ? '✓' : '✗ ' + j.msg; mark.className = 'saved ' + (j.ok ? 'ok' : 'bad'); })
+        .catch(function (e) { mark.textContent = '✗ ' + e; mark.className = 'saved bad'; });
+    });
+  });
+})();
+</script>
+{% endblock %}

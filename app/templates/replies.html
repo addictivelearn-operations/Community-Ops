@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Ticket replies · Community Ops{% endblock %}
+{% block body %}
+{% set base = "/replies?view=" ~ view ~ "&q=" ~ (q | urlencode) %}
+{% set here = base ~ "&page=" ~ page %}
+<h1>Ticket replies <span class="mute small">— "From 27th May 26 onward", row {{ settings.main_first_row }} down</span></h1>
+<div class="tabs">
+  <a href="/replies?view=pending&q={{ q | urlencode }}" class="{{ 'on' if view == 'pending' }}">Marked Yes, not sent</a>
+  <a href="/replies?view=unsent&q={{ q | urlencode }}" class="{{ 'on' if view == 'unsent' }}">All not sent</a>
+  <a href="/replies?view=sent&q={{ q | urlencode }}" class="{{ 'on' if view == 'sent' }}">Sent</a>
+  <a href="/replies?view=all&q={{ q | urlencode }}" class="{{ 'on' if view == 'all' }}">All</a>
+  <form method="get" action="/replies" style="display:inline-block">
+    <input type="hidden" name="view" value="{{ view }}">
+    <input name="q" value="{{ q }}" placeholder="ticket #, name, email, course, query" class="search">
+  </form>
+</div>
+<p class="small mute">Every column of the sheet is shown; click a row number or name to edit K/L/M and send; the ticket number opens the Zoho conversation in a new tab.
+  Choosing <b>Yes</b> in the Trigger column sends immediately, exactly as in the sheet.</p>
+{% include "_pager.html" %}
+{% include "_scrollsync.html" %}
+<div class="scroll">
+<table class="grid">
+<thead><tr><th>Row</th>{% for col, label in headers %}<th title="Column {{ col }}">{{ col }} · {{ label }}</th>{% endfor %}</tr></thead>
+<tbody>
+{% for t in rows %}
+<tr>
+  <td><a href="/replies/{{ t.row }}">{{ t.row }}</a></td>
+  <td class="nowrap"><a href="/tickets/{{ t.ticket }}" target="_blank" rel="noopener" title="Opens the Zoho conversation in a new tab">#{{ t.ticket }} ↗</a></td>
+  <td>{{ t.owner }}</td>
+  <td class="nowrap">{{ t.created }}</td>
+  <td class="nowrap">{{ t.imported_at }}</td>
+  <td>{{ t.brand }}</td>
+  <td><a href="/replies/{{ t.row }}">{{ t.name }}</a></td>
+  <td>{{ t.email }}</td>
+  <td>{{ t.phone }}</td>
+  <td class="clip" title="{{ t.course }}">{{ t.course }}</td>
+  <td class="clip" title="{{ t.requirement }}">{{ t.requirement }}</td>
+  <td class="edit"><textarea class="cellbox" data-row="{{ t.row }}" data-field="resolution" rows="1"
+        placeholder="type the resolution…" title="Saved to Column K when you click away">{{ t.resolution }}</textarea><span class="saved"></span></td>
+  <td><select class="cellsel" data-row="{{ t.row }}" data-field="res_status">
+        <option value="" {{ 'selected' if not t.res_status }}></option>
+        {% for o in status_options %}<option value="{{ o }}" {{ 'selected' if t.res_status == o }}>{{ o }}</option>{% endfor %}
+        {% if t.res_status and t.res_status not in status_options %}<option value="{{ t.res_status }}" selected>{{ t.res_status }}</option>{% endif %}
+      </select><span class="saved"></span></td>
+  <td>
+    <form method="post" action="/replies/{{ t.row }}/trigger" class="inline">
+      <input type="hidden" name="back_to" value="{{ here }}">
+      <select name="value" class="trig {{ t.trigger | lower }}"
+              onchange="if (this.value.toLowerCase() === 'yes' && !{{ 'true' if t.sent else 'false' }}) { if (!confirm('Send the reply on ticket #{{ t.ticket }} to {{ t.email }} and close it?')) { this.value = this.dataset.was; return; } } this.form.submit();"
+              data-was="{{ t.trigger }}">
+        <option value="" {{ 'selected' if not t.trigger }}></option>
+        {% for o in trigger_options %}<option value="{{ o }}" {{ 'selected' if t.trigger == o }}>{{ o }}</option>{% endfor %}
+        {% if t.trigger and t.trigger not in trigger_options %}<option value="{{ t.trigger }}" selected>{{ t.trigger }}</option>{% endif %}
+      </select>
+    </form>
+  </td>
+  <td class="clip nowrap" title="{{ t.sent_at }}">{{ t.last_sent_line }}</td>
+  <td>{{ t.sent_by }}</td>
+  <td class="clip" title="{{ t.category }}">{{ t.category }}</td>
+  <td class="clip" title="{{ t.result }}">{{ t.result }}</td>
+  <td>{{ t.zoho_status }}</td>
+</tr>
+{% else %}
+<tr><td colspan="{{ headers | length + 1 }}" class="mute">Nothing here.</td></tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+{% set base = here %}{% include "_pager.html" %}
+<script>
+// Inline cells: saved when you click away (K) or change (L) — like typing into the sheet.
+(function () {
+  function save(el) {
+    var mark = el.nextElementSibling;
+    mark.textContent = '…'; mark.className = 'saved';
+    var body = new URLSearchParams({ field: el.dataset.field, value: el.value });
+    fetch('/replies/' + el.dataset.row + '/cell', { method: 'POST', body: body })
+      .then(function (r) { return r.json(); })
+      .then(function (j) { mark.textContent = j.ok ? '✓' : '✗ ' + j.msg; mark.className = 'saved ' + (j.ok ? 'ok' : 'bad'); })
+      .catch(function (e) { mark.textContent = '✗ ' + e; mark.className = 'saved bad'; });
+  }
+  document.querySelectorAll('textarea.cellbox').forEach(function (ta) {
+    ta.dataset.was = ta.value;
+    ta.addEventListener('focus', function () { ta.rows = 6; });
+    ta.addEventListener('blur', function () {
+      ta.rows = 1;
+      if (ta.value !== ta.dataset.was) { ta.dataset.was = ta.value; save(ta); }
+    });
+  });
+  document.querySelectorAll('select.cellsel').forEach(function (sel) {
+    sel.addEventListener('change', function () { save(sel); });
+  });
+})();
+</script>
+{% endblock %}
