@@ -16,6 +16,11 @@
     <button>Migrate sheet rows into the database</button>
     <span class="small mute">One-off / re-runnable. Reads the two sheets, writes only new rows into data/ops.db.</span>
   </form>
+  <form method="post" action="/admin/resync-replies" class="actions"
+        onsubmit="return confirm('Pull the ticket tracker sheet’s CURRENT course/requirement/resolution/status/trigger/sent/category/result columns into the database, for tickets already there? Use this after replies were sent from the SHEET instead of this app, so the app stops thinking they are still pending. It only updates tickets the sheet already has — nothing is deleted.')">
+    <button>Resync ticket replies from the sheet</button>
+    <span class="small mute">For catching the database up after Ticket replies were edited/sent from the sheet, not the app — updates only the reply columns, leaves owner/Zoho status alone (zoho_sync already keeps those current).</span>
+  </form>
 </div>
 
 <h2>Sync pipeline</h2>

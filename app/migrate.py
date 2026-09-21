@@ -114,3 +114,71 @@ def run_migration(g: GoogleClient) -> MigrationReport:
     set_state(REFUNDS_MIGRATED_KEY, "1")
 
     return report
+
+
+@dataclass
+class ResyncReport:
+    updated: int = 0
+    unchanged: int = 0
+    inserted: int = 0
+    failed: list[str] = None
+
+    def __post_init__(self):
+        self.failed = self.failed or []
+
+
+# The reply-workflow columns an agent (or a send) can change on the sheet —
+# everything migrate.run_migration() would otherwise only ever write ONCE
+# (INSERT OR IGNORE skips a ticket number already in the database). Identity
+# columns (owner, created_at, imported_at, brand, name, email, phone) and
+# zoho_status are deliberately left alone here — the app's own zoho_sync
+# already keeps those current from Zoho directly, a fresher source than a
+# sheet snapshot.
+_RESYNC_COLUMNS = ["course", "requirement", "resolution", "res_status",
+                   "trigger_value", "sent_at", "sent_by", "category", "result"]
+
+
+def resync_ticket_replies(g: GoogleClient) -> ResyncReport:
+    """Pull the CURRENT state of every reply-workflow column from the sheet
+    into the database, for tickets that already exist there — the opposite
+    case from run_migration()'s INSERT OR IGNORE, which only ever adds a
+    ticket number it has never seen before and otherwise leaves it alone.
+
+    For when the sheet, not the app, was the one actually used to reply and
+    send (agents working the old way) — brings the database back in step
+    before the app is trusted to drive Trigger = Yes itself. Never touches a
+    ticket the sheet doesn't have."""
+    report = ResyncReport()
+    tickets = sheets.load_tickets(g)
+    with get_conn() as c:
+        existing = {r["ticket"]: r for r in c.execute("SELECT * FROM tickets").fetchall()}
+        for t in tickets:
+            if not t.ticket:
+                continue
+            new_values = (t.course, t.requirement, t.resolution, t.res_status, t.trigger,
+                         t.sent_at, t.sent_by, t.category, t.result)
+            try:
+                cur = existing.get(t.ticket)
+                if cur is None:
+                    c.execute(
+                        """INSERT INTO tickets
+                           (ticket, owner, created_at, imported_at, brand, name, email, phone,
+                            course, requirement, resolution, res_status, trigger_value, sent_at,
+                            sent_by, category, result, zoho_status)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (t.ticket, t.owner, _parse_display(t.created), _parse_display(t.imported_at),
+                         t.brand, t.name, t.email, t.phone, *new_values, t.zoho_status))
+                    report.inserted += 1
+                    continue
+                old_values = tuple(cur[col] for col in _RESYNC_COLUMNS)
+                if old_values == new_values:
+                    report.unchanged += 1
+                    continue
+                c.execute(
+                    """UPDATE tickets SET course=?, requirement=?, resolution=?, res_status=?,
+                       trigger_value=?, sent_at=?, sent_by=?, category=?, result=? WHERE ticket=?""",
+                    (*new_values, t.ticket))
+                report.updated += 1
+            except Exception as e:  # noqa: BLE001 — one bad row must not abort the batch
+                report.failed.append(f"#{t.ticket}: {e}")
+    return report

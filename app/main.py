@@ -499,6 +499,20 @@ def admin_migrate(u: User = Depends(require_editor)):
     return back("/diagnostics", msg, not (report.tickets_failed or report.refunds_failed))
 
 
+@app.post("/admin/resync-replies")
+def admin_resync_replies(u: User = Depends(require_editor)):
+    """Pull the sheet's CURRENT reply-workflow columns (course, requirement,
+    resolution, res_status, trigger, sent_at, sent_by, category, result)
+    into the database for tickets already there — for when the sheet, not
+    the app, was used to reply/send. See migrate.resync_ticket_replies."""
+    g = gclient(u)
+    report = migrate.resync_ticket_replies(g)
+    msg = f"{report.updated} ticket(s) updated, {report.unchanged} already matched, {report.inserted} new"
+    if report.failed:
+        msg += f", {len(report.failed)} FAILED: " + "; ".join(report.failed)[:500]
+    return back("/diagnostics", msg, not report.failed)
+
+
 # ---------------------------------------------------------------------------
 # Sync pipeline — manual triggers, for testing without waiting on the
 # schedule.
