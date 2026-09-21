@@ -233,6 +233,11 @@ class Settings:
     team_test_to: list[str] = field(default_factory=lambda: _csv("RF_TEAM_TEST_TO"))
     team_signature: str = _get("RF_TEAM_SIGNATURE", "Community Team")
     team_deadline_days: int = _int("RF_TEAM_DEADLINE_DAYS", 15)
+
+    # --- Read-only export for the Master Refund Tracker (21 Sep 2026) --------
+    # GET /api/refunds.json with header X-Api-Key equal to this value returns
+    # every refund row as JSON. Empty = the endpoint is switched off (503).
+    export_api_key: str = _get("EXPORT_API_KEY", "")
     team_doc_title_prefix: str = "Community Refund Approval Document - "
 
     # --- Ticket sync (port of zoho-desk-sync) --------------------------------

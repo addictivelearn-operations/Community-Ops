@@ -110,6 +110,11 @@ email **from your Gmail** (still against the finance team's sheet — see §3a).
 The row page shows both emails exactly as they will go out, and **Retry team
 handoff** for a partial failure — it only does what is still missing.
 
+**Read-only export** (21 Sep 2026) — `GET /api/refunds.json` returns every
+refund row as JSON for the Master Refund Tracker's "Community Refunds" tab.
+It needs the `X-Api-Key` header equal to `EXPORT_API_KEY` (set it on Railway;
+empty = off). It reads what the Refunds page reads and writes nothing.
+
 **Diagnostics** — connectivity and configuration (reads only): Zoho
 reachability, a row/refund count from the app's database, and the finance
 spreadsheet and Doc folder opened by name.

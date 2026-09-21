@@ -6,6 +6,7 @@ Run:  uvicorn app.main:app --reload --port 8000   (or run.bat)
 """
 
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote, urlencode
 
@@ -466,6 +467,40 @@ def admin_sync_course_master(u: User = Depends(require_editor)):
 # ---------------------------------------------------------------------------
 # Diagnostics
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Read-only export for the Master Refund Tracker (Hardik, 21 Sep 2026)
+# ---------------------------------------------------------------------------
+# The tracker shows a read-only "Community Refunds" tab mirroring the Refunds
+# page. It cannot sign in with Google, so this one route takes a shared secret
+# (EXPORT_API_KEY) in the X-Api-Key header instead. It reads the same rows the
+# Refunds page reads and writes nothing. Off (503) until the key is set.
+
+@app.get("/api/refunds.json")
+def api_refunds_json(request: Request):
+    key = (settings.export_api_key or "").strip()
+    if not key:
+        raise HTTPException(status_code=503, detail="EXPORT_API_KEY is not set on this app")
+    sent = (request.headers.get("x-api-key") or "").strip()
+    if not sent or sent != key:
+        raise HTTPException(status_code=401, detail="a valid X-Api-Key header is required")
+    rows = load_refunds()
+    out = []
+    for r in rows:
+        out.append({
+            "row": r.row, "submitted": r.timestamp, "submittedMs": r.timestamp_ms,
+            "name": r.name, "email": r.email, "phone": r.phone, "groupForm": r.group,
+            "reason": r.reason, "funnel": r.funnel, "funnelFinal": r.funnel_final, "noOrder": r.no_order,
+            "community": r.community, "amount": r.amount, "brand": r.brand,
+            "trigger": r.trigger, "sentAt": r.sent_at, "sentBy": r.sent_by,
+            "result": r.result, "handoff": r.handoff, "sent": r.sent,
+        })
+    return JSONResponse({
+        "app": "community-ops", "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "headers": [{"letter": a, "label": b} for a, b in REFUND_HEADERS],
+        "count": len(out), "rows": out,
+    })
+
 
 @app.get("/diagnostics", response_class=HTMLResponse)
 def diagnostics(request: Request, u: User = Depends(require_user)):
