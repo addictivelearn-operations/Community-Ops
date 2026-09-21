@@ -8,6 +8,7 @@
 </div></div>
 <p class="small mute">Everything above only reads. "CANNOT OPEN" on a spreadsheet or folder means your account has no access to it — ask for edit access (spreadsheets) or view access (folder). The ticket tracker and Community Refund data live in the app's own database now, not a sheet, so there's nothing to open for those.</p>
 
+{% if can_edit %}
 <h2>Data migration</h2>
 <div class="card">
   <form method="post" action="/admin/migrate" class="actions"
@@ -37,4 +38,7 @@
     <span class="small mute">Re-reads the external Course Master sheet into the local mirror used for course-name lookups.</span>
   </form>
 </div>
+{% else %}
+<p class="small mute">Data migration and sync-pipeline controls are hidden — view-only accounts can't run them.</p>
+{% endif %}
 {% endblock %}

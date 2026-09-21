@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.parse import quote, urlencode
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request
+from fastapi.exception_handlers import http_exception_handler as fastapi_default_http_exception_handler
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -49,7 +50,15 @@ class User:
     def __init__(self, email: str, name: str):
         self.email = email
         self.name = name
-        self.display = settings.authorized_senders.get(email, name)
+        self.display = settings.authorized_senders.get(email.lower(), name)
+
+    @property
+    def can_edit(self) -> bool:
+        """Anyone on an allowed domain can sign in and view (google.is_allowed);
+        only an AUTHORIZED_SENDER may change anything — same list that already
+        governed who could approve/send, now also gating inline edits and the
+        admin sync buttons."""
+        return self.email.lower() in settings.authorized_senders
 
 
 def current_user(request: Request) -> User | None:
@@ -66,6 +75,14 @@ def require_user(request: Request) -> User:
     return u
 
 
+def require_editor(u: User = Depends(require_user)) -> User:
+    if not u.can_edit:
+        raise HTTPException(status_code=403,
+                            detail=f"{u.email} has view-only access. Ask an editor "
+                                   f"({', '.join(sorted(settings.authorized_senders))}) to make this change.")
+    return u
+
+
 def gclient(u: User) -> google.GoogleClient:
     try:
         return google.GoogleClient(u.email)
@@ -74,10 +91,29 @@ def gclient(u: User) -> google.GoogleClient:
 
 
 def render(request: Request, name: str, **ctx) -> HTMLResponse:
-    ctx.setdefault("user", current_user(request))
+    u = current_user(request)
+    ctx.setdefault("user", u)
+    ctx.setdefault("can_edit", bool(u and u.can_edit))
     ctx.setdefault("msg", request.query_params.get("msg", ""))
     ctx.setdefault("ok", request.query_params.get("ok", "") == "1")
     return templates.TemplateResponse(request, name, ctx)
+
+
+@app.exception_handler(HTTPException)
+async def _http_exception_handler(request: Request, exc: HTTPException):
+    """Same as FastAPI's default, except a 403 (require_editor) gets a
+    response shaped for whoever's asking — JSON for the inline-edit
+    endpoints (their own JS expects {"ok", "msg"}, not an HTML page), the
+    app's own error page for everything else — instead of a bare JSON
+    {"detail": ...} body. Everything else (redirects, 404s) behaves exactly
+    as before."""
+    if exc.status_code == 403:
+        if request.url.path.endswith("/cell"):
+            return JSONResponse({"ok": False, "msg": str(exc.detail)}, status_code=403)
+        resp = render(request, "error.html", error=str(exc.detail))
+        resp.status_code = 403
+        return resp
+    return await fastapi_default_http_exception_handler(request, exc)
 
 
 PAGE_SIZE = 300
@@ -198,7 +234,7 @@ def _apply_refund_trigger(g: google.GoogleClient, u: User, row: int, value: str)
 
 
 @app.post("/refunds/{row}/cell")
-def refund_cell(row: int, field: str = Form(...), value: str = Form(""), u: User = Depends(require_user)):
+def refund_cell(row: int, field: str = Form(...), value: str = Form(""), u: User = Depends(require_editor)):
     """Inline edit from the list (community). Never sends."""
     if field not in REFUND_EDITABLE or field == "trigger":
         return JSONResponse({"ok": False, "msg": "not editable"}, status_code=400)
@@ -207,14 +243,14 @@ def refund_cell(row: int, field: str = Form(...), value: str = Form(""), u: User
 
 
 @app.post("/refunds/{row}/community")
-def refund_community(row: int, value: str = Form(""), u: User = Depends(require_user)):
+def refund_community(row: int, value: str = Form(""), u: User = Depends(require_editor)):
     written = save_refund_fields(row, {"community": value.strip()})
     return back(f"/refunds/{row}", "Saved community." if written else "No change.", True)
 
 
 @app.post("/refunds/{row}/trigger")
 def refund_trigger(request: Request, row: int, value: str = Form(""), back_to: str = Form("/refunds"),
-                   u: User = Depends(require_user)):
+                   u: User = Depends(require_editor)):
     msg, ok = _apply_refund_trigger(gclient(u), u, row, value.strip())
     return back(back_to if back_to.startswith("/") else "/refunds", msg, ok)
 
@@ -238,7 +274,7 @@ def refund_detail(request: Request, row: int, u: User = Depends(require_user)):
 
 
 @app.post("/refunds/{row}/approve")
-def refund_approve(row: int, u: User = Depends(require_user)):
+def refund_approve(row: int, u: User = Depends(require_editor)):
     g = gclient(u)
     first, second = refunds.approve(g, row, u.display, u.email)
     msg = ("Learner: " + first.message) + (f" · Team: {second.message}" if second else "")
@@ -246,7 +282,7 @@ def refund_approve(row: int, u: User = Depends(require_user)):
 
 
 @app.post("/refunds/{row}/handoff")
-def refund_handoff(row: int, u: User = Depends(require_user)):
+def refund_handoff(row: int, u: User = Depends(require_editor)):
     g = gclient(u)
     r = load_refund(row)
     if not r:
@@ -281,7 +317,7 @@ def replies_list(request: Request, u: User = Depends(require_user)):
 
 
 @app.post("/replies/{row}/cell")
-def reply_cell(row: int, field: str = Form(...), value: str = Form(""), u: User = Depends(require_user)):
+def reply_cell(row: int, field: str = Form(...), value: str = Form(""), u: User = Depends(require_editor)):
     """Inline edit from the list: one field (resolution, status, …), saved
     when the agent clicks away. Never sends — Trigger has its own route."""
     if field not in MAIN_EDITABLE or field == "trigger":
@@ -306,7 +342,7 @@ def _apply_reply_trigger(u: User, row: int, value: str) -> tuple[str, bool]:
 
 @app.post("/replies/{row}/trigger")
 def reply_trigger(request: Request, row: int, value: str = Form(""), back_to: str = Form("/replies"),
-                  u: User = Depends(require_user)):
+                  u: User = Depends(require_editor)):
     msg, ok = _apply_reply_trigger(u, row, value.strip())
     return back(back_to if back_to.startswith("/") else "/replies", msg, ok)
 
@@ -324,7 +360,7 @@ def reply_detail(request: Request, row: int, u: User = Depends(require_user)):
 @app.post("/replies/{row}/save")
 def reply_save(row: int, course: str = Form(""), requirement: str = Form(""), resolution: str = Form(""),
                res_status: str = Form(""), trigger: str = Form(""),
-               u: User = Depends(require_user)):
+               u: User = Depends(require_editor)):
     """Saves every editable field, then — if Trigger is "Yes" and the row is
     unsent — sends, exactly as choosing Yes on the list would."""
     fields = {"course": course.strip(), "requirement": requirement.strip(),
@@ -337,7 +373,7 @@ def reply_save(row: int, course: str = Form(""), requirement: str = Form(""), re
 
 
 @app.post("/replies/{row}/send")
-def reply_send(row: int, resend: str = Form(""), u: User = Depends(require_user)):
+def reply_send(row: int, resend: str = Form(""), u: User = Depends(require_editor)):
     out = replies.send(row, u.display, allow_resend=resend == "1")
     return back(f"/replies/{row}", out.message, out.ok)
 
@@ -383,7 +419,7 @@ def ticket_thread(request: Request, number: str, u: User = Depends(require_user)
 # ---------------------------------------------------------------------------
 
 @app.post("/admin/migrate")
-def admin_migrate(u: User = Depends(require_user)):
+def admin_migrate(u: User = Depends(require_editor)):
     """One-off: copy every row still only in the two sheets into the app's
     own database. Safe to run more than once — already-migrated rows are
     skipped, not duplicated (see migrate.py)."""
@@ -404,25 +440,25 @@ def admin_migrate(u: User = Depends(require_user)):
 # ---------------------------------------------------------------------------
 
 @app.post("/admin/sync/tickets")
-def admin_sync_tickets(u: User = Depends(require_user)):
+def admin_sync_tickets(u: User = Depends(require_editor)):
     result = zoho_sync.run()
     return back("/diagnostics", f"Ticket sync: {result}", "failed" not in result or not result.get("failed"))
 
 
 @app.post("/admin/sync/statuses")
-def admin_sync_statuses(u: User = Depends(require_user)):
+def admin_sync_statuses(u: User = Depends(require_editor)):
     result = zoho_sync.refresh_statuses()
     return back("/diagnostics", f"Status refresh: {result}", True)
 
 
 @app.post("/admin/sync/refunds")
-def admin_sync_refunds(u: User = Depends(require_user)):
+def admin_sync_refunds(u: User = Depends(require_editor)):
     result = refund_intake.run()
     return back("/diagnostics", f"Refund intake: {result}", True)
 
 
 @app.post("/admin/sync/course-master")
-def admin_sync_course_master(u: User = Depends(require_user)):
+def admin_sync_course_master(u: User = Depends(require_editor)):
     result = course_master.refresh()
     return back("/diagnostics", f"Course master refresh: {result}", True)
 

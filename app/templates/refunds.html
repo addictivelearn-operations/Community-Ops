@@ -32,12 +32,17 @@
   <td class="clip" title="{{ r.reason }}">{{ r.reason }}</td>
   <td class="clip" title="{{ r.funnel }}">{{ r.funnel }}</td>
   <td class="clip" title="{{ r.funnel_final }}">{{ r.funnel_final }}{% if r.no_order %} <span class="badge bad">no order</span>{% endif %}</td>
+  {% if can_edit %}
   <td class="edit"><input class="cellbox" data-row="{{ r.row }}" data-field="community" value="{{ r.community }}"
         placeholder="community name" title="Saved to Column I when you click away — feeds the learner email and the brand formula"><span class="saved"></span></td>
+  {% else %}
+  <td class="clip" title="{{ r.community }}">{{ r.community }}</td>
+  {% endif %}
   <td>{{ r.amount }}</td>
   <td>{{ r.brand }}</td>
   <td>{{ r.spare_l }}</td>
   <td>{{ r.spare_m }}</td>
+  {% if can_edit %}
   <td>
     <form method="post" action="/refunds/{{ r.row }}/trigger" class="inline">
       <input type="hidden" name="back_to" value="{{ here }}">
@@ -50,6 +55,9 @@
       </select>
     </form>
   </td>
+  {% else %}
+  <td>{{ r.trigger }}</td>
+  {% endif %}
   <td class="nowrap">{{ r.sent_at.splitlines()[0] if r.sent_at else '' }}</td>
   <td>{{ r.sent_by }}</td>
   <td class="clip" title="{{ r.result }}">{{ r.result }}</td>

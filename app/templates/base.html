@@ -16,7 +16,7 @@
     <a href="/diagnostics">Diagnostics</a>
   </nav>
   <form method="post" action="/logout" class="who">
-    <span>{{ user.display }} · {{ user.email }}</span>
+    <span>{{ user.display }} · {{ user.email }} · {{ 'editor' if can_edit else 'view-only' }}</span>
     <button class="link">Sign out</button>
   </form>
   {% endif %}

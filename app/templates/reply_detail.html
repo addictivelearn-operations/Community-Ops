@@ -3,10 +3,13 @@
 {% block body %}
 <p><a href="/replies">← Ticket replies</a></p>
 <h1>#{{ t.ticket }} · {{ t.name }} <span class="mute small">row {{ t.row }}</span></h1>
+{% if not can_edit %}<p class="small mute">View-only — ask an editor to change anything here.</p>{% endif %}
 
+{% if can_edit %}
 <form method="post" action="/replies/{{ t.row }}/save" id="edit"
       onsubmit="var s=document.getElementById('trigger').value.toLowerCase()==='yes' && !{{ 'true' if t.sent else 'false' }};
                 return !s || confirm('Trigger is Yes and this row has not been sent.\n\nSave, then send the reply on ticket #{{ t.ticket }} to {{ t.email }} from {{ from_address }} and close it?');">
+{% endif %}
 <div class="card">
   <div class="kv">
     <div>A · Ticket</div><div><a href="/tickets/{{ t.ticket }}" target="_blank" rel="noopener">#{{ t.ticket }} — view the full Zoho conversation ↗</a> <span class="small mute">(new tab)</span></div>
@@ -17,6 +20,7 @@
     <div>F · Learner</div><div>{{ t.name }}</div>
     <div>G · Email</div><div>{{ t.email }}</div>
     <div>H · Phone</div><div>{{ t.phone }}</div>
+    {% if can_edit %}
     <div>I · Course</div><div><input name="course" value="{{ t.course }}"></div>
     <div>J · Requirement</div><div><textarea name="requirement" rows="3">{{ t.requirement }}</textarea></div>
     <div>K · Resolution</div><div><textarea name="resolution" rows="6" placeholder="What goes into the email as the Response">{{ t.resolution }}</textarea></div>
@@ -37,21 +41,30 @@
       </select>
       <span class="small mute">Yes sends (if not already sent) — same as in the sheet.</span>
     </div>
+    {% else %}
+    <div>I · Course</div><div>{{ t.course or '—' }}</div>
+    <div>J · Requirement</div><div class="wrap">{{ t.requirement or '—' }}</div>
+    <div>K · Resolution</div><div class="wrap">{{ t.resolution or '—' }}</div>
+    <div>L · Resolution status</div><div>{{ t.res_status or '—' }}</div>
+    <div>M · Trigger Email</div><div>{{ t.trigger or '—' }}</div>
+    {% endif %}
     <div>N · Sent</div><div class="wrap">{{ t.sent_at or '—' }}</div>
     <div>O · Trigger by</div><div>{{ t.sent_by or '—' }}</div>
     <div>Q · Category</div><div>{{ t.category or '—' }}</div>
     <div>R · Reply status</div><div>{{ t.result or '—' }}</div>
     <div>T · Zoho status</div><div>{{ t.zoho_status or '—' }}</div>
   </div>
+  {% if can_edit %}
   <div class="actions">
     <button class="primary" id="savebtn">{{ 'Save & send reply' if (t.trigger | lower == 'yes' and not t.sent) else 'Save' }}</button>
     {% if blockers %}<span class="warn">Sending would be refused — missing: {{ blockers | join(', ') }}</span>{% endif %}
     <span class="small mute">Writes only the cells you changed (I, J, K, L, M).</span>
   </div>
+  {% endif %}
 </div>
-</form>
+{% if can_edit %}</form>{% endif %}
 
-{% if t.sent %}
+{% if t.sent and can_edit %}
 <div class="card">
   <p><span class="badge sent">Sent</span> {{ t.last_sent_line }}</p>
   <form method="post" action="/replies/{{ t.row }}/send" class="actions"
@@ -61,6 +74,8 @@
     <span class="small mute">Same as the sheet menu's "Send reply AGAIN" — stacks a new timestamp in Column N.</span>
   </form>
 </div>
+{% elif t.sent %}
+<div class="card"><p><span class="badge sent">Sent</span> {{ t.last_sent_line }}</p></div>
 {% endif %}
 
 <h2>Email preview <span class="mute small">(uses the saved Column K — save first to refresh)</span></h2>

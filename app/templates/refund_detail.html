@@ -3,6 +3,7 @@
 {% block body %}
 <p><a href="/refunds">← Refunds</a></p>
 <h1>{{ r.name }} <span class="mute small">row {{ r.row }}</span></h1>
+{% if not can_edit %}<p class="small mute">View-only — ask an editor to change anything here.</p>{% endif %}
 
 <div class="card">
   <div class="kv">
@@ -16,16 +17,19 @@
     <div>H · Funnel final</div><div>{{ r.funnel_final }}
       {% if r.no_order %}<span class="badge bad">no order found → refill-the-form email, no team handoff</span>{% endif %}</div>
     <div>I · Group</div><div>
+      {% if can_edit %}
       <form method="post" action="/refunds/{{ r.row }}/community" class="inline" style="display:flex;gap:8px;align-items:center">
         <input name="value" value="{{ r.community }}" style="max-width:420px">
         <button>Save I</button>
         <span class="small mute">feeds the learner email and the brand formula in K</span>
-      </form></div>
+      </form>
+      {% else %}{{ r.community or '—' }}{% endif %}</div>
     <div>J · Amount</div><div>{{ r.amount }}</div>
     <div>K · Brand</div><div>{{ r.brand or '— (the sheet formula found none)' }}</div>
     <div>L</div><div>{{ r.spare_l }}</div>
     <div>M</div><div>{{ r.spare_m }}</div>
     <div>N · Trigger Email</div><div>
+      {% if can_edit %}
       <form method="post" action="/refunds/{{ r.row }}/trigger" class="inline"
             onsubmit="var v=this.value.value.toLowerCase(); return !(v==='yes' && !{{ 'true' if r.sent else 'false' }}) || confirm('Approve row {{ r.row }}?\n\n1. Zoho email to {{ r.email }} from {{ settings.rf_from_address }} (ticket created in No Reply and closed).\n{% if not r.no_order %}2. Tracker row + Google Doc + finance email to {{ recipients.to | join(', ') }}{% if recipients.test %} [TEST]{% endif %}, sent from {{ user.email }}.{% else %}2. No team handoff (no order found).{% endif %}');">
         <input type="hidden" name="back_to" value="/refunds/{{ r.row }}">
@@ -37,6 +41,7 @@
         <button class="primary">{{ 'Save' if r.sent else 'Save (Yes = approve & send)' }}</button>
       </form>
       {% if blockers and not r.sent %}<div class="warn" style="margin-top:8px">Yes would be refused — missing: {{ blockers | join(', ') }}. Fix the row in the sheet, then reload.</div>{% endif %}
+      {% else %}{{ r.trigger or '—' }}{% endif %}
     </div>
     <div>O · Sent</div><div>{{ r.sent_at or '—' }}</div>
     <div>P · Trigger by</div><div>{{ r.sent_by or '—' }}</div>
@@ -48,11 +53,13 @@
 {% if r.sent and not r.no_order %}
 <div class="card">
   <p><span class="badge sent">Learner emailed</span> on {{ r.sent_at.splitlines()[0] }} — cannot be emailed again from here.</p>
+  {% if can_edit %}
   <form method="post" action="/refunds/{{ r.row }}/handoff" class="actions"
         onsubmit="return confirm('Retry the team handoff for row {{ r.row }}? Only what is missing on the tracker row is done (row, doc, email). The email goes out from {{ user.email }}.')">
     <button>Retry team handoff</button>
     <span class="small mute">Same as the sheet menu's "Retry team handoff" — reuses an existing tracker row, doc or sent email, never duplicates.</span>
   </form>
+  {% endif %}
 </div>
 {% endif %}
 

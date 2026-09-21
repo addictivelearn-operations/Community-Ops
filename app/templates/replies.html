@@ -35,6 +35,7 @@
   <td>{{ t.phone }}</td>
   <td class="clip" title="{{ t.course }}">{{ t.course }}</td>
   <td class="clip" title="{{ t.requirement }}">{{ t.requirement }}</td>
+  {% if can_edit %}
   <td class="edit"><textarea class="cellbox" data-row="{{ t.row }}" data-field="resolution" rows="1"
         placeholder="type the resolution…" title="Saved to Column K when you click away">{{ t.resolution }}</textarea><span class="saved"></span></td>
   <td><select class="cellsel" data-row="{{ t.row }}" data-field="res_status">
@@ -54,6 +55,11 @@
       </select>
     </form>
   </td>
+  {% else %}
+  <td class="clip" title="{{ t.resolution }}">{{ t.resolution }}</td>
+  <td>{{ t.res_status }}</td>
+  <td>{{ t.trigger }}</td>
+  {% endif %}
   <td class="clip nowrap" title="{{ t.sent_at }}">{{ t.last_sent_line }}</td>
   <td>{{ t.sent_by }}</td>
   <td class="clip" title="{{ t.category }}">{{ t.category }}</td>

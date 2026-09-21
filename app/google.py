@@ -135,11 +135,13 @@ def exchange_code(code: str) -> dict:
 
 
 def is_allowed(email: str) -> tuple[bool, str]:
+    """Sign-in eligibility only — domain membership. Being an AUTHORIZED_SENDER
+    is a separate, narrower check (main.py's require_editor) for who may make
+    changes; everyone on an allowed domain gets read-only access by signing
+    in at all."""
     domain = email.rsplit("@", 1)[-1]
     if domain not in settings.allowed_domains:
         return False, f"{email} is not on an allowed domain ({', '.join(settings.allowed_domains)})."
-    if email not in settings.authorized_senders:
-        return False, f"{email} is not in AUTHORIZED_SENDERS."
     return True, ""
 
 
