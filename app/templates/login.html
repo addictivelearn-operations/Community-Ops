@@ -12,7 +12,8 @@
     Copy <code>.env.example</code> to <code>.env</code> and fill these in, then restart.</div>
   {% else %}
   <p><a class="btn" href="/auth/google?next={{ next | urlencode }}">Sign in with Google</a></p>
-  <p class="small mute">Allowed: {{ settings.allowed_domains | join(", ") }} accounts listed in AUTHORIZED_SENDERS.</p>
+  <p class="small mute">Anyone on {{ settings.allowed_domains | join(", ") }} can sign in to view.
+    Only accounts in AUTHORIZED_SENDERS can make changes.</p>
   {% endif %}
 </div>
 {% endblock %}

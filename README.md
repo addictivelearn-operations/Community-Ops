@@ -17,7 +17,7 @@ landing sheet are unaffected and stay exactly as they are.
 | Tracker row + Doc | As the trigger owner (Kawal) | As the signed-in approver |
 | Finance email | From Kawal's Gmail, Reply-To approver | **From the approver's own Gmail** |
 | Ticket reply | Zoho, from noreply@ | Same |
-| Who can act | AUTHORIZED_SENDERS | AUTHORIZED_SENDERS + Google sign-in |
+| Who can act | AUTHORIZED_SENDERS | AUTHORIZED_SENDERS (anyone on an ALLOWED_DOMAINS account can sign in and view — see §1) |
 
 ## 1. One-time setup (about 15 minutes)
 
@@ -50,10 +50,18 @@ python make_env.py
 This creates `.env` from `.env.example`, generates `APP_SECRET`, and copies
 the three `ZOHO_*` values from `../zoho-token-bridge/.env` (same Self Client
 the bridge uses). Then open `.env` and paste in `GOOGLE_CLIENT_ID` and
-`GOOGLE_CLIENT_SECRET`. Check `AUTHORIZED_SENDERS` lists everyone who should
-be able to approve.
+`GOOGLE_CLIENT_SECRET`.
 
 `.env` never leaves this machine. It is in `.gitignore`.
+
+**Two access tiers, added 21 Sep 2026** — `ALLOWED_DOMAINS` is who can sign
+in at all (view-only by default: see every ticket/refund, nothing editable).
+`AUTHORIZED_SENDERS` is the narrower list who can additionally change
+anything (inline edits, trigger/send/approve, and the diagnostics admin
+buttons) — enforced server-side (`main.py`'s `require_editor`), not just
+hidden in the UI. Keep both in sync with whatever's actually deployed
+(Railway or wherever) — they're separate copies, this file's changes don't
+propagate there automatically.
 
 ### c. Install and run
 
