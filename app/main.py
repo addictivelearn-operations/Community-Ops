@@ -5,6 +5,7 @@ refunds.py and replies.py, the integrations in google.py and zoho.py.
 Run:  uvicorn app.main:app --reload --port 8000   (or run.bat)
 """
 
+import json
 import sqlite3
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -19,12 +20,12 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import course_master, google, migrate, refund_intake, refunds, replies, scheduler, zoho, zoho_sync
-from .config import settings
+from .config import RF_CURRENCY, settings
 from .db import get_conn, get_state, init_db
 from .store import (MAIN_EDITABLE, MAIN_HEADERS, REFUND_EDITABLE, REFUND_HEADERS, STATUS_FALLBACK,
                     TRIGGER_FALLBACK, create_test_refund, create_test_ticket, delete_refund,
                     delete_ticket, is_internal, load_refund, load_refunds, load_ticket,
-                    load_tickets, save_main_fields, save_refund_fields, write_refund)
+                    load_tickets, parse_amount, save_main_fields, save_refund_fields, write_refund)
 
 init_db()
 
@@ -211,6 +212,55 @@ def home(request: Request, u: User = Depends(require_user)):
                   refund_total=len(rf),
                   reply_pending=sum(1 for t in tk if t.pending),
                   reply_total=len(tk))
+
+
+# ---------------------------------------------------------------------------
+# Dashboard
+# ---------------------------------------------------------------------------
+
+def _ticket_status(sent_at: str, trigger: str) -> str:
+    if sent_at:
+        return "sent"
+    if (trigger or "").strip().upper() == "NA":
+        return "na"
+    return "pending"
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+def dashboard(request: Request, u: User = Depends(require_user)):
+    """Two read-only breakdowns (Ticket replies, Refunds) on one tab, each
+    with its own day/month filter. All aggregation happens client-side —
+    both tables are small enough (low thousands of rows) to ship whole and
+    filter/recompute instantly in JS rather than round-tripping to the
+    server on every filter change."""
+    with get_conn() as c:
+        tickets = c.execute("SELECT created_at, course, category, trigger_value, sent_at FROM tickets").fetchall()
+        refunds = c.execute("SELECT timestamp_at, community, amount FROM refunds").fetchall()
+
+    ticket_data = []
+    for t in tickets:
+        day = (t["created_at"] or "")[:10]
+        if not day:
+            continue
+        ticket_data.append({"day": day, "month": day[:7],
+                            "course": t["course"].strip() if t["course"] else "(blank)",
+                            "category": t["category"].strip() if t["category"] else "(uncategorised)",
+                            "status": _ticket_status(t["sent_at"], t["trigger_value"])})
+
+    refund_data = []
+    for r in refunds:
+        day = (r["timestamp_at"] or "")[:10]
+        if not day:
+            continue
+        refund_data.append({"day": day, "month": day[:7],
+                            "group": r["community"].strip() if r["community"] else "(blank)",
+                            "amount": parse_amount(r["amount"])})
+
+    def to_json(data: list) -> str:
+        return json.dumps(data).replace("</", "<\\/")
+
+    return render(request, "dashboard.html", currency=RF_CURRENCY,
+                  tickets_json=to_json(ticket_data), refunds_json=to_json(refund_data))
 
 
 # ---------------------------------------------------------------------------
@@ -581,7 +631,7 @@ def api_refunds_json(request: Request):
 
 
 @app.get("/diagnostics", response_class=HTMLResponse)
-def diagnostics(request: Request, u: User = Depends(require_user)):
+def diagnostics(request: Request, u: User = Depends(require_superuser)):
     g = gclient(u)
     checks = {}
     checks["Signed in as"] = f"{u.email} ({u.display})"

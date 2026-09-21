@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · Community Ops{% endblock %}
+{% block body %}
+<h1>Dashboard</h1>
+<div class="dash-grid">
+
+  <div class="card dash-panel">
+    <h2>Ticket replies</h2>
+    <p class="small mute">Filtered by ticket date (Column C). Counts: Sent = a reply went out; NA = Trigger is NA;
+      Pending = everything else (blank, Pending, or Yes but not yet sent).</p>
+    <div class="filter-row" id="tk-filter">
+      <div class="filter-mode">
+        <label><input type="radio" name="tk-mode" value="all" checked> All time</label>
+        <label><input type="radio" name="tk-mode" value="day"> By day</label>
+        <label><input type="radio" name="tk-mode" value="month"> By month</label>
+      </div>
+      <div class="filter-multi" data-mode="day">
+        <select multiple id="tk-days"></select>
+        <div class="filter-actions">
+          <button type="button" data-all="tk-days">Select all</button>
+          <button type="button" data-clear="tk-days">Clear</button>
+        </div>
+      </div>
+      <div class="filter-multi" data-mode="month">
+        <select multiple id="tk-months"></select>
+        <div class="filter-actions">
+          <button type="button" data-all="tk-months">Select all</button>
+          <button type="button" data-clear="tk-months">Clear</button>
+        </div>
+      </div>
+      <div class="filter-count" id="tk-count"></div>
+    </div>
+    <div class="stat-row">
+      <div class="stat-tile total"><b id="tk-total">0</b><span>Total</span></div>
+      <div class="stat-tile sent"><b id="tk-sent">0</b><span>Sent</span></div>
+      <div class="stat-tile pending"><b id="tk-pending">0</b><span>Pending</span></div>
+      <div class="stat-tile na"><b id="tk-na">0</b><span>NA</span></div>
+    </div>
+    <div class="dash-breakdown-grid">
+      <div class="dash-breakdown">
+        <h3>By course</h3>
+        <div class="scroll-sm"><table class="bars">
+          <thead><tr><th>Course</th><th>Tickets</th></tr></thead>
+          <tbody id="tk-course"></tbody>
+        </table></div>
+      </div>
+      <div class="dash-breakdown">
+        <h3>By category</h3>
+        <div class="scroll-sm"><table class="bars">
+          <thead><tr><th>Category</th><th>Tickets</th></tr></thead>
+          <tbody id="tk-category"></tbody>
+        </table></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card dash-panel">
+    <h2>Refunds</h2>
+    <p class="small mute">Filtered by submitted date (Column A). Amount is Column J.</p>
+    <div class="filter-row" id="rf-filter">
+      <div class="filter-mode">
+        <label><input type="radio" name="rf-mode" value="all" checked> All time</label>
+        <label><input type="radio" name="rf-mode" value="day"> By day</label>
+        <label><input type="radio" name="rf-mode" value="month"> By month</label>
+      </div>
+      <div class="filter-multi" data-mode="day">
+        <select multiple id="rf-days"></select>
+        <div class="filter-actions">
+          <button type="button" data-all="rf-days">Select all</button>
+          <button type="button" data-clear="rf-days">Clear</button>
+        </div>
+      </div>
+      <div class="filter-multi" data-mode="month">
+        <select multiple id="rf-months"></select>
+        <div class="filter-actions">
+          <button type="button" data-all="rf-months">Select all</button>
+          <button type="button" data-clear="rf-months">Clear</button>
+        </div>
+      </div>
+      <div class="filter-count" id="rf-count"></div>
+    </div>
+    <div class="stat-row">
+      <div class="stat-tile total"><b id="rf-total">0</b><span>Cases</span></div>
+      <div class="stat-tile amount"><b id="rf-amount">{{ currency }}0</b><span>Total refund amount</span></div>
+    </div>
+    <div class="dash-breakdown">
+      <h3>By Group</h3>
+      <div class="scroll-sm"><table class="bars">
+        <thead><tr><th>Group</th><th>Cases</th><th>Amount</th></tr></thead>
+        <tbody id="rf-group"></tbody>
+      </table></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function () {
+  const TICKETS = {{ tickets_json | safe }};
+  const REFUNDS = {{ refunds_json | safe }};
+  const CURRENCY = {{ currency | tojson }};
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  function fmtDay(d) { const p = d.split('-'); return `${parseInt(p[2],10)} ${MONTHS[parseInt(p[1],10)-1]} ${p[0]}`; }
+  function fmtMonth(m) { const p = m.split('-'); return `${MONTHS[parseInt(p[1],10)-1]} ${p[0]}`; }
+  function fmtAmount(n) { return CURRENCY + Math.round(n).toLocaleString('en-IN'); }
+
+  function groupCount(rows, key) {
+    const m = new Map();
+    rows.forEach(r => m.set(r[key], (m.get(r[key]) || 0) + 1));
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  }
+
+  function groupCountAmount(rows) {
+    const m = new Map();
+    rows.forEach(r => {
+      const cur = m.get(r.group) || { count: 0, amount: 0 };
+      cur.count += 1; cur.amount += r.amount;
+      m.set(r.group, cur);
+    });
+    return [...m.entries()].sort((a, b) => b[1].amount - a[1].amount);
+  }
+
+  function renderCountBars(tbody, pairs) {
+    if (!pairs.length) { tbody.innerHTML = '<tr><td class="dash-empty" colspan="2">Nothing in this range.</td></tr>'; return; }
+    const max = pairs[0][1];
+    tbody.innerHTML = pairs.map(([name, count]) => {
+      const pct = max ? Math.round(count / max * 100) : 0;
+      return `<tr><td class="name" title="${esc(name)}">${esc(name)}</td>` +
+             `<td class="bar-wrap"><span class="bar-fill" style="width:${pct}%"></span>` +
+             `<span class="bar-label">${count}</span></td></tr>`;
+    }).join('');
+  }
+
+  function renderGroupBars(tbody, pairs) {
+    if (!pairs.length) { tbody.innerHTML = '<tr><td class="dash-empty" colspan="3">Nothing in this range.</td></tr>'; return; }
+    const max = pairs[0][1].amount;
+    tbody.innerHTML = pairs.map(([name, v]) => {
+      const pct = max ? Math.round(v.amount / max * 100) : 0;
+      return `<tr><td class="name" title="${esc(name)}">${esc(name)}</td>` +
+             `<td class="nowrap" style="padding:5px 8px">${v.count}</td>` +
+             `<td class="bar-wrap"><span class="bar-fill" style="width:${pct}%"></span>` +
+             `<span class="bar-label">${fmtAmount(v.amount)}</span></td></tr>`;
+    }).join('');
+  }
+
+  // A day/month filter wired to one panel's radios + two <select multiple>s.
+  // Calls onChange(visibleRows) once at setup and again on every interaction.
+  function setupFilter(prefix, rows, onChange) {
+    const days = [...new Set(rows.map(r => r.day))].sort();
+    const months = [...new Set(rows.map(r => r.month))].sort();
+    const daySel = document.getElementById(prefix + '-days');
+    const monthSel = document.getElementById(prefix + '-months');
+    days.forEach(d => daySel.add(new Option(fmtDay(d), d)));
+    months.forEach(m => monthSel.add(new Option(fmtMonth(m), m)));
+
+    const root = document.getElementById(prefix + '-filter');
+    const modeRadios = root.querySelectorAll(`input[name="${prefix}-mode"]`);
+    const multis = root.querySelectorAll('.filter-multi');
+    const countEl = document.getElementById(prefix + '-count');
+
+    function mode() { return root.querySelector(`input[name="${prefix}-mode"]:checked`).value; }
+    function syncVisibility() { multis.forEach(el => el.classList.toggle('on', el.dataset.mode === mode())); }
+
+    function currentRows() {
+      const m = mode();
+      if (m === 'all') return rows;
+      const sel = new Set([...(m === 'day' ? daySel : monthSel).selectedOptions].map(o => o.value));
+      if (!sel.size) return [];
+      return rows.filter(r => sel.has(m === 'day' ? r.day : r.month));
+    }
+
+    function fire() {
+      const visible = currentRows();
+      countEl.textContent = mode() === 'all' ? `${rows.length} total` : `${visible.length} of ${rows.length}`;
+      onChange(visible);
+    }
+
+    modeRadios.forEach(r => r.addEventListener('change', () => { syncVisibility(); fire(); }));
+    daySel.addEventListener('change', fire);
+    monthSel.addEventListener('change', fire);
+    root.querySelectorAll('[data-all]').forEach(btn => btn.addEventListener('click', () => {
+      const sel = document.getElementById(btn.dataset.all);
+      [...sel.options].forEach(o => { o.selected = true; });
+      fire();
+    }));
+    root.querySelectorAll('[data-clear]').forEach(btn => btn.addEventListener('click', () => {
+      const sel = document.getElementById(btn.dataset.clear);
+      [...sel.options].forEach(o => { o.selected = false; });
+      fire();
+    }));
+
+    syncVisibility();
+    fire();
+  }
+
+  setupFilter('tk', TICKETS, function (rows) {
+    document.getElementById('tk-total').textContent = rows.length;
+    document.getElementById('tk-sent').textContent = rows.filter(r => r.status === 'sent').length;
+    document.getElementById('tk-pending').textContent = rows.filter(r => r.status === 'pending').length;
+    document.getElementById('tk-na').textContent = rows.filter(r => r.status === 'na').length;
+    renderCountBars(document.getElementById('tk-course'), groupCount(rows, 'course'));
+    renderCountBars(document.getElementById('tk-category'), groupCount(rows, 'category'));
+  });
+
+  setupFilter('rf', REFUNDS, function (rows) {
+    document.getElementById('rf-total').textContent = rows.length;
+    document.getElementById('rf-amount').textContent = fmtAmount(rows.reduce((s, r) => s + r.amount, 0));
+    renderGroupBars(document.getElementById('rf-group'), groupCountAmount(rows));
+  });
+})();
+</script>
+{% endblock %}

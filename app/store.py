@@ -29,6 +29,22 @@ RF_NO_ORDER = "No order found"
 _SKILLARBITRAGE_RE = re.compile(r"ai for women|women ai|idc|independent director", re.I)
 
 
+def parse_amount(s: str) -> float:
+    """Column J is free text (whatever the form/agent typed, sometimes with a
+    currency symbol or a comma) — strip everything but digits and a decimal
+    point. Unparseable or blank -> 0.0, so a dashboard total is never thrown
+    off by one bad cell."""
+    if not s:
+        return 0.0
+    digits = re.sub(r"[^0-9.]", "", s)
+    if digits.count(".") > 1:  # e.g. "1.234.56" — treat dots as thousands separators
+        digits = digits.replace(".", "")
+    try:
+        return float(digits) if digits else 0.0
+    except ValueError:
+        return 0.0
+
+
 def compute_brand(community: str) -> str:
     if not community:
         return ""
