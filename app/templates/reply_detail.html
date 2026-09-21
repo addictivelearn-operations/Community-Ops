@@ -5,6 +5,13 @@
 <h1>#{{ t.ticket }} · {{ t.name }} <span class="mute small">row {{ t.row }}</span></h1>
 {% if not can_edit %}<p class="small mute">View-only — ask an editor to change anything here.</p>{% endif %}
 
+{% if is_superuser %}
+<form method="post" action="/replies/{{ t.row }}/delete" class="actions" style="justify-content:flex-end"
+      onsubmit="return confirm('Delete row {{ t.row }} (#{{ t.ticket }} — {{ t.name }}) from this app’s database?\n\nThis removes the row only — it does NOT undo a reply already sent on Zoho. Cannot be undone.')">
+  <button class="danger">Delete this row</button>
+</form>
+{% endif %}
+
 {% if can_edit %}
 <form method="post" action="/replies/{{ t.row }}/save" id="edit"
       onsubmit="var s=document.getElementById('trigger').value.toLowerCase()==='yes' && !{{ 'true' if t.sent else 'false' }};

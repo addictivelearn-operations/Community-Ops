@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Add test ticket · Community Ops{% endblock %}
+{% block body %}
+<p><a href="/replies">← Ticket replies</a></p>
+<h1>Add a test ticket entry <span class="mute small">superuser only</span></h1>
+<p class="small mute">Creates a row for the reply flow only — it is never touched by the Zoho sync. Trigger = Yes
+  on it will try to send a real reply on the ticket number you enter, which will fail unless that number
+  actually exists in Zoho Desk. Leave Ticket number blank to auto-generate one, which keeps Trigger = Yes safely
+  unusable. Delete the row from its detail page when you're done.</p>
+<form method="post" action="/replies/new" class="card">
+  <div class="kv">
+    <div>Ticket number</div><div><input name="ticket" placeholder="leave blank to auto-generate TEST-…"></div>
+    <div>Owner</div><div><input name="owner"></div>
+    <div>Brand</div><div><input name="brand" placeholder="LawSikho or SkillArbitrage"></div>
+    <div>Name</div><div><input name="name" placeholder="Test Learner"></div>
+    <div>Email</div><div><input name="email" type="email" placeholder="you@example.com"></div>
+    <div>Phone</div><div><input name="phone" placeholder="+91 90000 00000"></div>
+    <div>Course</div><div><input name="course"></div>
+    <div>Requirement</div><div><textarea name="requirement" rows="3"></textarea></div>
+  </div>
+  <div class="actions">
+    <button class="primary">Add test entry</button>
+  </div>
+</form>
+{% endblock %}

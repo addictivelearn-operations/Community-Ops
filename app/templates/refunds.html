@@ -12,6 +12,7 @@
     <input type="hidden" name="view" value="{{ view }}">
     <input name="q" value="{{ q }}" placeholder="name, email, community, phone" class="search">
   </form>
+  {% if is_superuser %}<a href="/refunds/new">+ Add test entry</a>{% endif %}
 </div>
 <p class="small mute">Every column of the sheet. A–J come from the form and K from the sheet's formula;
   <b>I (Group)</b> can be corrected in place (saved when you click away); <b>N (Trigger)</b> set to <b>Yes</b> sends, exactly as in the sheet.</p>

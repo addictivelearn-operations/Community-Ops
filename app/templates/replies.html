@@ -13,6 +13,7 @@
     <input type="hidden" name="view" value="{{ view }}">
     <input name="q" value="{{ q }}" placeholder="ticket #, name, email, course, query" class="search">
   </form>
+  {% if is_superuser %}<a href="/replies/new">+ Add test entry</a>{% endif %}
 </div>
 <p class="small mute">Every column of the sheet is shown; click a row number or name to edit K/L/M and send; the ticket number opens the Zoho conversation in a new tab.
   Choosing <b>Yes</b> in the Trigger column sends immediately, exactly as in the sheet.</p>

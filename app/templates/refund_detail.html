@@ -5,6 +5,13 @@
 <h1>{{ r.name }} <span class="mute small">row {{ r.row }}</span></h1>
 {% if not can_edit %}<p class="small mute">View-only — ask an editor to change anything here.</p>{% endif %}
 
+{% if is_superuser %}
+<form method="post" action="/refunds/{{ r.row }}/delete" class="actions" style="justify-content:flex-end"
+      onsubmit="return confirm('Delete row {{ r.row }} ({{ r.name }}) from this app’s database?\n\nThis removes the row only — it does NOT undo a Zoho email, tracker row, Doc or finance email already sent. Cannot be undone.')">
+  <button class="danger">Delete this row</button>
+</form>
+{% endif %}
+
 <div class="card">
   <div class="kv">
     <div>A · Submitted</div><div>{{ r.timestamp }}</div>

@@ -202,6 +202,10 @@ class Settings:
             "ayushi.s@lawsikho.in": "Ayushi",
         }).items()
     })
+    # The only account that may add a test entry or delete any entry — a
+    # narrower right than AUTHORIZED_SENDERS, which every editor is in
+    # (21 Sep 2026).
+    superuser_email: str = _get("SUPERUSER_EMAIL", "kawal@lawsikho.in").lower()
 
     zoho_client_id: str = _get("ZOHO_CLIENT_ID")
     zoho_client_secret: str = _get("ZOHO_CLIENT_SECRET")

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Add test refund · Community Ops{% endblock %}
+{% block body %}
+<p><a href="/refunds">← Refunds</a></p>
+<h1>Add a test refund entry <span class="mute small">superuser only</span></h1>
+<p class="small mute">Creates a row exactly like a real form submission — Trigger = Yes on it will send a
+  real learner email and (if configured) a real tracker hand-off. Delete it from the row page when you're done.</p>
+<form method="post" action="/refunds/new" class="card">
+  <div class="kv">
+    <div>Name</div><div><input name="name" placeholder="Test Learner"></div>
+    <div>Email</div><div><input name="email" type="email" placeholder="you@example.com"></div>
+    <div>Phone</div><div><input name="phone" placeholder="+91 90000 00000"></div>
+    <div>Group (as typed)</div><div><input name="group"></div>
+    <div>Reason</div><div><input name="reason"></div>
+    <div>Funnel</div><div><input name="funnel"></div>
+    <div>Funnel final</div><div><input name="funnel_final" placeholder="leave blank unless testing the \"no order found\" path"></div>
+    <div>Community</div><div><input name="community" placeholder="feeds the Brand formula"></div>
+    <div>Amount</div><div><input name="amount"></div>
+  </div>
+  <div class="actions">
+    <button class="primary">Add test entry</button>
+  </div>
+</form>
+{% endblock %}

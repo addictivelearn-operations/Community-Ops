@@ -63,6 +63,18 @@ hidden in the UI. Keep both in sync with whatever's actually deployed
 (Railway or wherever) — they're separate copies, this file's changes don't
 propagate there automatically.
 
+**A third, narrower tier — `SUPERUSER_EMAIL`, added 21 Sep 2026** — the one
+account (default `kawal@lawsikho.in`) that can add a manually-created test
+row on the Refunds or Ticket replies page (`/refunds/new`, `/replies/new`)
+and delete any row (`POST .../{row}/delete`) — enforced server-side
+(`main.py`'s `require_superuser`), invisible to everyone else including
+other `AUTHORIZED_SENDERS`. A test ticket's number is always forced to start
+with `TEST-` (auto-generated if left blank) so it can never collide with a
+real Zoho ticket number or get picked up by the Zoho sync. Delete removes
+only the local DB row — it does **not** undo a Zoho email, tracker hand-off,
+Doc or finance email that row already triggered; those have to be cleaned up
+by hand if the row got that far before being deleted.
+
 ### c. Install and run
 
 ```bash

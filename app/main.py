@@ -5,6 +5,7 @@ refunds.py and replies.py, the integrations in google.py and zoho.py.
 Run:  uvicorn app.main:app --reload --port 8000   (or run.bat)
 """
 
+import sqlite3
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,7 +22,8 @@ from . import course_master, google, migrate, refund_intake, refunds, replies, s
 from .config import settings
 from .db import get_conn, get_state, init_db
 from .store import (MAIN_EDITABLE, MAIN_HEADERS, REFUND_EDITABLE, REFUND_HEADERS, STATUS_FALLBACK,
-                    TRIGGER_FALLBACK, is_internal, load_refund, load_refunds, load_ticket,
+                    TRIGGER_FALLBACK, create_test_refund, create_test_ticket, delete_refund,
+                    delete_ticket, is_internal, load_refund, load_refunds, load_ticket,
                     load_tickets, save_main_fields, save_refund_fields, write_refund)
 
 init_db()
@@ -61,6 +63,12 @@ class User:
         admin sync buttons."""
         return self.email.lower() in settings.authorized_senders
 
+    @property
+    def is_superuser(self) -> bool:
+        """The one account that may add a test entry or delete any entry —
+        narrower than can_edit, which every AUTHORIZED_SENDER has (21 Sep 2026)."""
+        return self.email.lower() == settings.superuser_email
+
 
 def current_user(request: Request) -> User | None:
     s = request.session
@@ -84,6 +92,14 @@ def require_editor(u: User = Depends(require_user)) -> User:
     return u
 
 
+def require_superuser(u: User = Depends(require_user)) -> User:
+    if not u.is_superuser:
+        raise HTTPException(status_code=403,
+                            detail=f"{u.email} cannot do this. Only {settings.superuser_email} "
+                                   f"can add or delete entries.")
+    return u
+
+
 def gclient(u: User) -> google.GoogleClient:
     try:
         return google.GoogleClient(u.email)
@@ -95,6 +111,7 @@ def render(request: Request, name: str, **ctx) -> HTMLResponse:
     u = current_user(request)
     ctx.setdefault("user", u)
     ctx.setdefault("can_edit", bool(u and u.can_edit))
+    ctx.setdefault("is_superuser", bool(u and u.is_superuser))
     ctx.setdefault("msg", request.query_params.get("msg", ""))
     ctx.setdefault("ok", request.query_params.get("ok", "") == "1")
     return templates.TemplateResponse(request, name, ctx)
@@ -256,6 +273,22 @@ def refund_trigger(request: Request, row: int, value: str = Form(""), back_to: s
     return back(back_to if back_to.startswith("/") else "/refunds", msg, ok)
 
 
+@app.get("/refunds/new", response_class=HTMLResponse)
+def refund_new_form(request: Request, u: User = Depends(require_superuser)):
+    return render(request, "refund_new.html")
+
+
+@app.post("/refunds/new")
+def refund_new(name: str = Form(""), email: str = Form(""), phone: str = Form(""),
+               group: str = Form(""), reason: str = Form(""), funnel: str = Form(""),
+               funnel_final: str = Form(""), community: str = Form(""), amount: str = Form(""),
+               u: User = Depends(require_superuser)):
+    row = create_test_refund({"name": name, "email": email, "phone": phone, "group": group,
+                              "reason": reason, "funnel": funnel, "funnel_final": funnel_final,
+                              "community": community, "amount": amount})
+    return RedirectResponse(f"/refunds/{row}?msg={quote('Test entry added.')}&ok=1", status_code=303)
+
+
 @app.get("/refunds/{row}", response_class=HTMLResponse)
 def refund_detail(request: Request, row: int, u: User = Depends(require_user)):
     r = load_refund(row)
@@ -292,6 +325,12 @@ def refund_handoff(row: int, u: User = Depends(require_editor)):
         return back(f"/refunds/{row}", "The learner has not been emailed yet — approve first.", False)
     out = refunds.handoff_and_record(g, r, u.display, u.email)
     return back(f"/refunds/{row}", "Team: " + out.message, out.ok)
+
+
+@app.post("/refunds/{row}/delete")
+def refund_delete(row: int, u: User = Depends(require_superuser)):
+    ok = delete_refund(row)
+    return back("/refunds", f"Row {row} deleted." if ok else f"Row {row} was already gone.", ok)
 
 
 # ---------------------------------------------------------------------------
@@ -348,6 +387,25 @@ def reply_trigger(request: Request, row: int, value: str = Form(""), back_to: st
     return back(back_to if back_to.startswith("/") else "/replies", msg, ok)
 
 
+@app.get("/replies/new", response_class=HTMLResponse)
+def reply_new_form(request: Request, u: User = Depends(require_superuser)):
+    return render(request, "reply_new.html")
+
+
+@app.post("/replies/new")
+def reply_new(ticket: str = Form(""), owner: str = Form(""), brand: str = Form(""),
+              name: str = Form(""), email: str = Form(""), phone: str = Form(""),
+              course: str = Form(""), requirement: str = Form(""),
+              u: User = Depends(require_superuser)):
+    try:
+        row = create_test_ticket({"ticket": ticket, "owner": owner, "brand": brand, "name": name,
+                                  "email": email, "phone": phone, "course": course,
+                                  "requirement": requirement})
+    except sqlite3.IntegrityError:
+        return RedirectResponse(f"/replies/new?msg={quote('That ticket number is already in use — leave it blank to auto-generate one.')}&ok=0", status_code=303)
+    return RedirectResponse(f"/replies/{row}?msg={quote('Test entry added.')}&ok=1", status_code=303)
+
+
 @app.get("/replies/{row}", response_class=HTMLResponse)
 def reply_detail(request: Request, row: int, u: User = Depends(require_user)):
     t = load_ticket(row)
@@ -377,6 +435,12 @@ def reply_save(row: int, course: str = Form(""), requirement: str = Form(""), re
 def reply_send(row: int, resend: str = Form(""), u: User = Depends(require_editor)):
     out = replies.send(row, u.display, allow_resend=resend == "1")
     return back(f"/replies/{row}", out.message, out.ok)
+
+
+@app.post("/replies/{row}/delete")
+def reply_delete(row: int, u: User = Depends(require_superuser)):
+    ok = delete_ticket(row)
+    return back("/replies", f"Row {row} deleted." if ok else f"Row {row} was already gone.", ok)
 
 
 @app.get("/tickets/{number}", response_class=HTMLResponse)

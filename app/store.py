@@ -170,6 +170,32 @@ def save_main_fields(row: int, values: dict) -> list[str]:
     return written
 
 
+TEST_TICKET_PREFIX = "TEST-"
+
+
+def create_test_ticket(fields: dict) -> int:
+    """A manually-added row for exercising the reply flow — never touched by
+    the Zoho sync (it matches tickets by exact ticket NUMBER, and a real
+    ticket number is never "TEST-…"). Returns the new row id."""
+    ticket = (fields.get("ticket") or "").strip()
+    if not ticket.startswith(TEST_TICKET_PREFIX):
+        ticket = TEST_TICKET_PREFIX + (ticket or str(int(datetime.now(settings.tz).timestamp())))
+    now = now_iso()
+    with get_conn() as c:
+        cur = c.execute(
+            "INSERT INTO tickets (ticket, owner, created_at, imported_at, brand, name, email, phone, "
+            "course, requirement) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (ticket, fields.get("owner", "").strip(), now, now, fields.get("brand", "").strip(),
+             fields.get("name", "").strip(), fields.get("email", "").strip(), fields.get("phone", "").strip(),
+             fields.get("course", "").strip(), fields.get("requirement", "").strip()))
+        return cur.lastrowid
+
+
+def delete_ticket(row: int) -> bool:
+    with get_conn() as c:
+        return c.execute("DELETE FROM tickets WHERE id=?", (row,)).rowcount > 0
+
+
 # ---------------------------------------------------------------------------
 # Community Refund
 # ---------------------------------------------------------------------------
@@ -294,6 +320,33 @@ def save_refund_fields(row: int, values: dict) -> list[str]:
     if written:
         _nudge_tracker(f"refund row {row}: " + ", ".join(written))
     return written
+
+
+def create_test_refund(fields: dict) -> int:
+    """A manually-added row for exercising the refund flow end-to-end
+    (learner email, tracker handoff, …) without waiting for a real form
+    submission. Returns the new row id."""
+    now = now_iso()
+    with get_conn() as c:
+        cur = c.execute(
+            "INSERT INTO refunds (timestamp_at, name, email, phone, group_name, reason, funnel, "
+            "funnel_final, community, amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (now, fields.get("name", "").strip(), fields.get("email", "").strip(),
+             fields.get("phone", "").strip(), fields.get("group", "").strip(),
+             fields.get("reason", "").strip(), fields.get("funnel", "").strip(),
+             fields.get("funnel_final", "").strip(), fields.get("community", "").strip(),
+             fields.get("amount", "").strip()))
+        row_id = cur.lastrowid
+    _nudge_tracker(f"test refund row {row_id} added")
+    return row_id
+
+
+def delete_refund(row: int) -> bool:
+    with get_conn() as c:
+        deleted = c.execute("DELETE FROM refunds WHERE id=?", (row,)).rowcount > 0
+    if deleted:
+        _nudge_tracker(f"refund row {row} deleted")
+    return deleted
 
 
 def _nudge_tracker(why: str) -> None:
