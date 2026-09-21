@@ -89,4 +89,10 @@ def run() -> dict:
                  cell(row, 6), cell(row, 7), cell(row, 8), cell(row, 9), cell(row, 10)))
             inserted += 1
 
+    if inserted:
+        try:
+            from . import tracker_app
+            tracker_app.nudge(f"{inserted} new refund row(s) from Refund_Clean")
+        except Exception:  # noqa: BLE001
+            pass
     return {"inserted": inserted, "skipped_old": skipped_old}

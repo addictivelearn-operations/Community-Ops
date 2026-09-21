@@ -277,6 +277,7 @@ def write_refund(row: int, field: str, value) -> None:
         field = "group_name"
     with get_conn() as c:
         c.execute(f"UPDATE refunds SET {field}=? WHERE id=?", (value, row))
+    _nudge_tracker(f"refund row {row}: {field}")
 
 
 def save_refund_fields(row: int, values: dict) -> list[str]:
@@ -290,7 +291,19 @@ def save_refund_fields(row: int, values: dict) -> list[str]:
                 col = "trigger_value" if field == "trigger" else field
                 c.execute(f"UPDATE refunds SET {col}=? WHERE id=?", (values[field], row))
                 written.append(field)
+    if written:
+        _nudge_tracker(f"refund row {row}: " + ", ".join(written))
     return written
+
+
+def _nudge_tracker(why: str) -> None:
+    """The Master Refund Tracker mirrors the refunds — tell it something changed
+    (tracker_app.nudge is fire-and-forget; imported late to avoid a cycle)."""
+    try:
+        from . import tracker_app
+        tracker_app.nudge(why)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 # Header labels for the list pages, unchanged from the sheet layout.

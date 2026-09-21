@@ -56,6 +56,23 @@ def _call(method: str, path: str, body: dict | None = None, query: dict | None =
         raise TrackerError(f"tracker app: {e}") from e
 
 
+def nudge(why: str = "") -> None:
+    """Tell the tracker a refund row changed so its Community Refunds tab
+    re-reads at once instead of at the next 10-minute pull (Hardik, 21 Sep
+    2026: "any update … should be reflected live"). Fire-and-forget on a
+    thread; a tracker that is down changes nothing here."""
+    if not configured():
+        return
+    import threading
+
+    def go():
+        try:
+            _call("POST", "/api/community-refunds/pull", {"why": why or "a refund row changed in Community Ops"})
+        except Exception:  # noqa: BLE001 — best effort only
+            pass
+    threading.Thread(target=go, daemon=True).start()
+
+
 def find(key: str) -> dict:
     """{found, rowNumber, docLink, emailStatus, emailSentAt, url} for a Source Key."""
     return _call("GET", "/api/community-refunds/handoff", query={"key": key})
