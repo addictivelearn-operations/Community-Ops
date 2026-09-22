@@ -227,7 +227,7 @@ def _ticket_status(sent_at: str, trigger: str) -> str:
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
-def dashboard(request: Request, u: User = Depends(require_user)):
+def dashboard(request: Request, u: User = Depends(require_superuser)):
     """Two read-only breakdowns (Ticket replies, Refunds) on one tab, each
     with its own day/month filter. All aggregation happens client-side —
     both tables are small enough (low thousands of rows) to ship whole and

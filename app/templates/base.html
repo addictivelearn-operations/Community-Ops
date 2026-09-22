@@ -13,8 +13,8 @@
   <nav>
     <a href="/refunds">Refunds</a>
     <a href="/replies">Ticket replies</a>
-    <a href="/dashboard">Dashboard</a>
-    {% if is_superuser %}<a href="/diagnostics">Diagnostics</a>{% endif %}
+    {% if is_superuser %}<a href="/dashboard">Dashboard</a>
+    <a href="/diagnostics">Diagnostics</a>{% endif %}
   </nav>
   <form method="post" action="/logout" class="who">
     <span>{{ user.display }} · {{ user.email }} · {{ 'editor' if can_edit else 'view-only' }}</span>
