@@ -380,6 +380,23 @@ def refund_handoff(row: int, u: User = Depends(require_editor)):
     return back(f"/refunds/{row}", "Team: " + out.message, out.ok)
 
 
+@app.post("/refunds/{row}/handoff-force")
+def refund_handoff_force(row: int, u: User = Depends(require_superuser)):
+    """Force-resend the finance email even if the tracker app (or sheet)
+    already has it marked Sent — deliberately bypasses the never-twice
+    guard, for retesting a row (or fixing a genuinely wrong send) rather
+    than the normal Retry, which only fills what's missing. Superuser only:
+    a real row's finance team could get a duplicate email if misused."""
+    g = gclient(u)
+    r = load_refund(row)
+    if not r:
+        raise HTTPException(404)
+    if not r.sent:
+        return back(f"/refunds/{row}", "The learner has not been emailed yet — approve first.", False)
+    out = refunds.handoff_and_record(g, r, u.display, u.email, force=True)
+    return back(f"/refunds/{row}", "Team (forced): " + out.message, out.ok)
+
+
 @app.post("/refunds/{row}/resend")
 def refund_resend(row: int, u: User = Depends(require_editor)):
     out = refunds.resend_learner_email(row, u.display)

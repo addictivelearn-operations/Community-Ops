@@ -374,13 +374,16 @@ def _tracker_app_values(d: Handoff) -> dict:
     }
 
 
-def run_handoff_to_tracker_app(g: GoogleClient, r: RefundRow, d: Handoff) -> Outcome:
+def run_handoff_to_tracker_app(g: GoogleClient, r: RefundRow, d: Handoff, force: bool = False) -> Outcome:
     """Steps 1–3 against the Master Refund Tracker app instead of the finance
     sheet (Hardik, 21 Sep 2026). Same order, same never-twice rules: the row
     is found by Source Key, the Doc is made only when the row has none, the
-    e-mail goes only when the row does not say Sent. The Doc and the e-mail
-    are unchanged except that their tracker link opens the learner in the
-    app (Phase 4 → Community Refund)."""
+    e-mail goes only when the row does not say Sent — unless `force`
+    deliberately overrides that guard (Force resend team handoff, 22 Sep
+    2026: for retesting a row whose Source Key was already Sent long before
+    today, e.g. an old test artefact). The Doc and the e-mail are unchanged
+    except that their tracker link opens the learner in the app (Phase 4 →
+    Community Refund)."""
     parts = []
     h = TEAM_HEADERS
     # 1. The row
@@ -405,8 +408,8 @@ def run_handoff_to_tracker_app(g: GoogleClient, r: RefundRow, d: Handoff) -> Out
         except (GoogleError, tracker_app.TrackerError) as e:
             return Outcome(False, " · ".join(parts) + f" · doc FAILED: {e}")
 
-    # 3. E-mail — only if the row does not say Sent
-    if (st.get("emailStatus") or "") == "Sent":
+    # 3. E-mail — only if the row does not say Sent, unless forced
+    if (st.get("emailStatus") or "") == "Sent" and not force:
         parts.append("email already sent")
     else:
         rc = recipients()
@@ -418,14 +421,16 @@ def run_handoff_to_tracker_app(g: GoogleClient, r: RefundRow, d: Handoff) -> Out
             tracker_app.update(d.key, {h[TEAM.MAIL_STATUS - 1]: "Sent",
                                        h[TEAM.MAIL_SENT_AT - 1]: _sheet_date(datetime.now(settings.tz))},
                                d.approved_by, "finance e-mail sent")
-            parts.append("email sent to " + ", ".join(rc["to"]) + f" from {g.email}")
+            parts.append(("email FORCE-resent to " if force else "email sent to ")
+                         + ", ".join(rc["to"]) + f" from {g.email}")
         except (GoogleError, tracker_app.TrackerError) as e:
             return Outcome(False, " · ".join(parts) + f" · email FAILED: {e}")
 
     return Outcome(True, " · ".join(parts))
 
 
-def run_handoff(g: GoogleClient, r: RefundRow, approver_name: str, approver_email: str) -> Outcome:
+def run_handoff(g: GoogleClient, r: RefundRow, approver_name: str, approver_email: str,
+                force: bool = False) -> Outcome:
     if r.no_order:
         return Outcome(True, 'Skipped — "No order found" row, nothing for the team')
     if not r.name or not r.email:
@@ -435,7 +440,7 @@ def run_handoff(g: GoogleClient, r: RefundRow, approver_name: str, approver_emai
     # configured (Hardik, 21 Sep 2026); the sheet path below stays as the
     # fallback and is untouched.
     if tracker_app.configured():
-        return run_handoff_to_tracker_app(g, r, d)
+        return run_handoff_to_tracker_app(g, r, d, force=force)
     parts = []
 
     # 1. Tracker row
@@ -466,10 +471,10 @@ def run_handoff(g: GoogleClient, r: RefundRow, approver_name: str, approver_emai
         except GoogleError as e:
             return Outcome(False, " · ".join(parts) + f" · doc FAILED: {e}")
 
-    # 3. Email — only if the tracker row does not say Sent
+    # 3. Email — only if the tracker row does not say Sent, unless forced
     st_col = col_letter(TEAM.MAIL_STATUS)
     st = g.sheet_values(settings.team_sheet_id, settings.team_tab, f"{st_col}{tracker_row}")
-    if st and cell(st[0], 1) == "Sent":
+    if st and cell(st[0], 1) == "Sent" and not force:
         parts.append("email already sent")
     else:
         rc = recipients()
@@ -481,16 +486,18 @@ def run_handoff(g: GoogleClient, r: RefundRow, approver_name: str, approver_emai
             g.sheet_write(settings.team_sheet_id, settings.team_tab,
                           f"{st_col}{tracker_row}:{col_letter(TEAM.MAIL_SENT_AT)}{tracker_row}",
                           [["Sent", _sheet_date(datetime.now(settings.tz))]], raw=False)
-            parts.append("email sent to " + ", ".join(rc["to"]) + f" from {g.email}")
+            parts.append(("email FORCE-resent to " if force else "email sent to ")
+                         + ", ".join(rc["to"]) + f" from {g.email}")
         except GoogleError as e:
             return Outcome(False, " · ".join(parts) + f" · email FAILED: {e}")
 
     return Outcome(True, " · ".join(parts))
 
 
-def handoff_and_record(g: GoogleClient, r: RefundRow, approver_name: str, approver_email: str) -> Outcome:
+def handoff_and_record(g: GoogleClient, r: RefundRow, approver_name: str, approver_email: str,
+                       force: bool = False) -> Outcome:
     try:
-        out = run_handoff(g, r, approver_name, approver_email)
+        out = run_handoff(g, r, approver_name, approver_email, force=force)
     except Exception as e:  # noqa: BLE001 — recorded, never raised past here
         out = Outcome(False, str(e))
     write_refund(r.row, "handoff", ("✅ " if out.ok else "❌ ") + out.message)

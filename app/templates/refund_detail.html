@@ -79,6 +79,13 @@
     <span class="small mute">Same as the sheet menu's "Retry team handoff" — reuses an existing tracker row, doc or sent email, never duplicates.</span>
   </form>
   {% endif %}
+  {% if is_superuser %}
+  <form method="post" action="/refunds/{{ r.row }}/handoff-force" class="actions"
+        onsubmit="return confirm('FORCE-resend the finance email for row {{ r.row }} to {{ recipients.to | join(', ') }}?\n\nUnlike Retry, this sends even if the tracker already has this row marked Sent — use it only when you specifically mean to send it again (e.g. retesting a row with old tracker history). A real, already-notified finance team WOULD get a duplicate email. Continue?')">
+    <button class="danger">Force resend team handoff</button>
+    <span class="small mute">Superuser only. Bypasses the never-twice guard entirely — sends to the finance team again no matter what the tracker says.</span>
+  </form>
+  {% endif %}
 </div>
 {% endif %}
 

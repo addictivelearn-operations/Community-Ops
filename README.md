@@ -125,6 +125,13 @@ handoff** for a partial failure — it only does what is still missing.
 row — a brand new Zoho ticket, exactly like the first send, stacking a new
 timestamp on top of the old one. It never touches the team handoff, which
 keeps its own separate Retry button and its own Source Key idempotency.
+**Force resend team handoff** (22 Sep 2026, superuser only) sends the
+finance email again even when the tracker already has that Source Key
+marked Sent — unlike Retry, which only fills what's missing and always
+skips a row already marked Sent. For retesting a row with old tracker
+history (a stale test artefact, or after changing `RF_TEAM_TO`/`RF_TEAM_CC`
+to verify the new recipients) or fixing a genuinely wrong send. Real risk:
+misused on a real row, it emails the finance team a second time.
 
 **Read-only export** (21 Sep 2026) — `GET /api/refunds.json` returns every
 refund row as JSON for the Master Refund Tracker's "Community Refunds" tab.
