@@ -234,7 +234,6 @@ class Settings:
     team_to: list[str] = field(default_factory=lambda: _csv("RF_TEAM_TO"))
     team_cc: list[str] = field(default_factory=lambda: _csv("RF_TEAM_CC"))
     team_bcc: list[str] = field(default_factory=lambda: _csv("RF_TEAM_BCC", "internal_comm@lawsikho1.zohodesk.in"))
-    team_test_to: list[str] = field(default_factory=lambda: _csv("RF_TEAM_TEST_TO"))
     team_signature: str = _get("RF_TEAM_SIGNATURE", "Community Team")
     team_deadline_days: int = _int("RF_TEAM_DEADLINE_DAYS", 15)
 

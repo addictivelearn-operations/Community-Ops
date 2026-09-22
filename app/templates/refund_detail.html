@@ -38,7 +38,7 @@
     <div>N · Trigger Email</div><div>
       {% if can_edit %}
       <form method="post" action="/refunds/{{ r.row }}/trigger" class="inline"
-            onsubmit="var v=this.value.value.toLowerCase(); return !(v==='yes' && !{{ 'true' if r.sent else 'false' }}) || confirm('Approve row {{ r.row }}?\n\n1. Zoho email to {{ r.email }} from {{ settings.rf_from_address }} (ticket created in No Reply and closed).\n{% if not r.no_order %}2. Tracker row + Google Doc + finance email to {{ recipients.to | join(', ') }}{% if recipients.test %} [TEST]{% endif %}, sent from {{ user.email }}.{% else %}2. No team handoff (no order found).{% endif %}');">
+            onsubmit="var v=this.value.value.toLowerCase(); return !(v==='yes' && !{{ 'true' if r.sent else 'false' }}) || confirm('Approve row {{ r.row }}?\n\n1. Zoho email to {{ r.email }} from {{ settings.rf_from_address }} (ticket created in No Reply and closed).\n{% if not r.no_order %}2. Tracker row + Google Doc + finance email to {{ recipients.to | join(', ') }}, sent from {{ user.email }}.{% else %}2. No team handoff (no order found).{% endif %}');">
         <input type="hidden" name="back_to" value="/refunds/{{ r.row }}">
         <select name="value" class="trig {{ r.trigger | lower }}">
           <option value="" {{ 'selected' if not r.trigger }}></option>
@@ -88,7 +88,7 @@
 
 {% if not r.no_order %}
 <h2>Email to the finance team — from {{ user.email }}</h2>
-<p class="small mute">To: {{ recipients.to | join(', ') }}{% if recipients.test %} <b>(RF_TEAM_TEST_TO override)</b>{% endif %}<br>
+<p class="small mute">To: {{ recipients.to | join(', ') }}<br>
   Cc: {{ recipients.cc | join(', ') or '(none)' }}<br>
   Bcc: {{ recipients.bcc | join(', ') or '(none)' }}<br>
   Reply-To: {{ reply_to or '(none)' }}</p>

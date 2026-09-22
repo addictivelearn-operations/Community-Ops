@@ -667,7 +667,7 @@ def diagnostics(request: Request, u: User = Depends(require_superuser)):
     except google.GoogleError as e:
         checks["Doc folder"] = f"CANNOT OPEN — {e}"
     rc = refunds.recipients()
-    checks["Team email To"] = ", ".join(rc["to"]) + ("   <== RF_TEAM_TEST_TO override" if rc["test"] else "")
+    checks["Team email To"] = ", ".join(rc["to"])
     checks["Team email Cc"] = ", ".join(rc["cc"]) or "(none)"
     checks["Team email Bcc"] = ", ".join(rc["bcc"]) or "(none)"
     checks["Team email From"] = f"{u.email} (the signed-in approver)"

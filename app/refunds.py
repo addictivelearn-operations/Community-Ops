@@ -350,9 +350,7 @@ def team_email_html(d: Handoff, doc_url: str) -> str:
 
 
 def recipients() -> dict:
-    if settings.team_test_to:
-        return {"to": settings.team_test_to, "cc": [], "bcc": [], "test": True}
-    return {"to": settings.team_to, "cc": settings.team_cc, "bcc": settings.team_bcc, "test": False}
+    return {"to": settings.team_to, "cc": settings.team_cc, "bcc": settings.team_bcc}
 
 
 def _tracker_app_values(d: Handoff) -> dict:
@@ -413,8 +411,6 @@ def run_handoff_to_tracker_app(g: GoogleClient, r: RefundRow, d: Handoff) -> Out
     else:
         rc = recipients()
         subject = f"Refund Approved for {d.name}"
-        if rc["test"]:
-            subject = "[TEST] " + subject
         try:
             g.send_mail(from_name="Refund Approval Alert", to=rc["to"], cc=rc["cc"], bcc=rc["bcc"],
                         subject=subject, html=team_email_html(d, doc_url),
@@ -422,8 +418,7 @@ def run_handoff_to_tracker_app(g: GoogleClient, r: RefundRow, d: Handoff) -> Out
             tracker_app.update(d.key, {h[TEAM.MAIL_STATUS - 1]: "Sent",
                                        h[TEAM.MAIL_SENT_AT - 1]: _sheet_date(datetime.now(settings.tz))},
                                d.approved_by, "finance e-mail sent")
-            parts.append("email sent to " + ", ".join(rc["to"]) + (" [TEST]" if rc["test"] else "")
-                         + f" from {g.email}")
+            parts.append("email sent to " + ", ".join(rc["to"]) + f" from {g.email}")
         except (GoogleError, tracker_app.TrackerError) as e:
             return Outcome(False, " · ".join(parts) + f" · email FAILED: {e}")
 
@@ -479,8 +474,6 @@ def run_handoff(g: GoogleClient, r: RefundRow, approver_name: str, approver_emai
     else:
         rc = recipients()
         subject = f"Refund Approved for {d.name}"
-        if rc["test"]:
-            subject = "[TEST] " + subject
         try:
             g.send_mail(from_name="Refund Approval Alert", to=rc["to"], cc=rc["cc"], bcc=rc["bcc"],
                         subject=subject, html=team_email_html(d, doc_url),
@@ -488,8 +481,7 @@ def run_handoff(g: GoogleClient, r: RefundRow, approver_name: str, approver_emai
             g.sheet_write(settings.team_sheet_id, settings.team_tab,
                           f"{st_col}{tracker_row}:{col_letter(TEAM.MAIL_SENT_AT)}{tracker_row}",
                           [["Sent", _sheet_date(datetime.now(settings.tz))]], raw=False)
-            parts.append("email sent to " + ", ".join(rc["to"]) + (" [TEST]" if rc["test"] else "")
-                         + f" from {g.email}")
+            parts.append("email sent to " + ", ".join(rc["to"]) + f" from {g.email}")
         except GoogleError as e:
             return Outcome(False, " · ".join(parts) + f" · email FAILED: {e}")
 
