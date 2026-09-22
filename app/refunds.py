@@ -183,7 +183,6 @@ class Handoff:
     approved_by_email: str
     approved_at: datetime
     deadline: datetime
-    tracker_row: int = 0
 
 
 def handoff_data(r: RefundRow, approver_name: str, approver_email: str) -> Handoff:
@@ -307,7 +306,7 @@ def doc_html(d: Handoff, tracker_url: str) -> str:
     )
 
 
-def team_email_html(d: Handoff, doc_url: str, tracker_url: str) -> str:
+def team_email_html(d: Handoff, doc_url: str) -> str:
     def row(label, value):
         return f"<tr><td><strong>{label}</strong></td><td>{esc(value)}</td></tr>"
     table = ('<table border="1" cellspacing="0" cellpadding="5" '
@@ -343,9 +342,7 @@ def team_email_html(d: Handoff, doc_url: str, tracker_url: str) -> str:
         + "<tr><td><strong>Finance Team</strong></td><td>"
         f"The amount recorded for this refund is <strong>{esc(amount)}</strong>. Please verify and "
         "confirm the final refund amount in <strong>Column T</strong> of the tracker. Once processed, "
-        "update <strong>Column U</strong>.<br><br>"
-        f'<strong>Tracker row:</strong> <a href="{esc(tracker_url)}" target="_blank">'
-        f"{esc(settings.team_tab)} — row {d.tracker_row}</a></td></tr></table>"
+        "update <strong>Column U</strong>.</td></tr></table>"
         '<p style="margin-top: 20px; font-size: 16px; font-weight: bold; color: #2C3E50;">Regards,</p>'
         f'<p style="font-size: 16px; font-weight: bold; color: #2980B9;">{esc(settings.team_signature)}</p>'
         "</div></div>"
@@ -395,7 +392,6 @@ def run_handoff_to_tracker_app(g: GoogleClient, r: RefundRow, d: Handoff) -> Out
         return Outcome(False, f"Tracker app: {e}")
     tracker_row = int(st.get("rowNumber") or 0)
     parts.append(f"tracker app row {tracker_row}" + ("" if st.get("created") else " (already there)"))
-    d.tracker_row = tracker_row
     tracker_url = st.get("url") or settings.tracker_url
 
     # 2. Doc — only if the row has none
@@ -421,7 +417,7 @@ def run_handoff_to_tracker_app(g: GoogleClient, r: RefundRow, d: Handoff) -> Out
             subject = "[TEST] " + subject
         try:
             g.send_mail(from_name="Refund Approval Alert", to=rc["to"], cc=rc["cc"], bcc=rc["bcc"],
-                        subject=subject, html=team_email_html(d, doc_url, tracker_url),
+                        subject=subject, html=team_email_html(d, doc_url),
                         reply_to=d.approved_by_email or None)
             tracker_app.update(d.key, {h[TEAM.MAIL_STATUS - 1]: "Sent",
                                        h[TEAM.MAIL_SENT_AT - 1]: _sheet_date(datetime.now(settings.tz))},
@@ -458,7 +454,6 @@ def run_handoff(g: GoogleClient, r: RefundRow, approver_name: str, approver_emai
             parts.append(f"tracker row {tracker_row}")
     except GoogleError as e:
         return Outcome(False, f"Tracker: {e}")
-    d.tracker_row = tracker_row
     tracker_url = _tracker_url(g, tracker_row)
 
     # 2. Doc — only if the tracker row has none
@@ -488,7 +483,7 @@ def run_handoff(g: GoogleClient, r: RefundRow, approver_name: str, approver_emai
             subject = "[TEST] " + subject
         try:
             g.send_mail(from_name="Refund Approval Alert", to=rc["to"], cc=rc["cc"], bcc=rc["bcc"],
-                        subject=subject, html=team_email_html(d, doc_url, tracker_url),
+                        subject=subject, html=team_email_html(d, doc_url),
                         reply_to=d.approved_by_email or None)
             g.sheet_write(settings.team_sheet_id, settings.team_tab,
                           f"{st_col}{tracker_row}:{col_letter(TEAM.MAIL_SENT_AT)}{tracker_row}",

@@ -349,14 +349,13 @@ def refund_detail(request: Request, row: int, u: User = Depends(require_user)):
     if not r:
         raise HTTPException(404, f"Row {row} is empty")
     d = refunds.handoff_data(r, u.display, u.email)
-    d.tracker_row = 0
     return render(request, "refund_detail.html", r=r,
                   headers=REFUND_HEADERS,
                   trigger_options=TRIGGER_FALLBACK,
                   blockers=r.blockers(),
                   learner_subject=refunds.learner_subject(r),
                   learner_html=refunds.learner_email_html(r),
-                  team_html=refunds.team_email_html(d, "(doc link)", "#"),
+                  team_html=refunds.team_email_html(d, "(doc link)"),
                   recipients=refunds.recipients(),
                   reply_to=d.approved_by_email)
 
