@@ -100,9 +100,9 @@ def learner_subject(r: RefundRow) -> str:
 STRANDED = re.compile(r"Ticket #(\S+) created but the email FAILED \(id (\d+)\)")
 
 
-def send_learner_email(r: RefundRow, approver_name: str) -> Outcome:
-    if r.sent:
-        return Outcome(False, f"Already sent on {r.sent_at.splitlines()[0]}")
+def send_learner_email(r: RefundRow, approver_name: str, allow_resend: bool = False) -> Outcome:
+    if r.sent and not allow_resend:
+        return Outcome(False, f"Already sent on {r.sent_at.splitlines()[0]} — use Send again to re-send.")
     blockers = r.blockers(handoff_on=True)
     if blockers:
         return Outcome(False, "Missing: " + ", ".join(blockers))
@@ -111,7 +111,9 @@ def send_learner_email(r: RefundRow, approver_name: str) -> Outcome:
     body = learner_email_html(r)
 
     # Reuse the ticket a previous attempt created, rather than leaving a
-    # duplicate in Desk for the same refund.
+    # duplicate in Desk for the same refund. Only matches a STRANDED failure
+    # message, never a past success, so a deliberate resend always gets its
+    # own new ticket — the old one is already closed.
     m = STRANDED.search(r.result or "")
     if m:
         ticket_number, ticket_id = m.group(1), m.group(2)
@@ -132,16 +134,35 @@ def send_learner_email(r: RefundRow, approver_name: str) -> Outcome:
         return Outcome(False, msg)
 
     # Stamp BEFORE closing — a failed close must never cause a second email.
-    write_refund(r.row, "sent_at", f"{now_stamp()} — {approver_name}")
+    # Stacked newest-first, same as the ticket-reply resend, so a resend
+    # never loses the original send's timestamp.
+    line = f"{now_stamp()} — {approver_name}"
+    write_refund(r.row, "sent_at", f"{line}\n{r.sent_at}" if r.sent_at else line)
     write_refund(r.row, "sent_by", approver_name)
 
-    message = f"#{ticket_number} Email sent"
+    message = (f"#{ticket_number} Re-sent" if r.sent else f"#{ticket_number} Email sent")
     try:
         zoho.close_ticket(ticket_id, unassign=True)
         message += " & closed"
     except zoho.ZohoError as e:
         message += f" — closing FAILED: {e}"
     return Outcome(True, message)
+
+
+def resend_learner_email(row: int, approver_name: str) -> Outcome:
+    """Deliberately re-send the learner's refund email on a row that was
+    already sent once — a brand new Zoho ticket, exactly like the first
+    send. Unlike the Trigger dropdown (which never re-sends), this is the
+    explicit "Send again" action. Never touches the team handoff, which has
+    its own separate Retry button and its own idempotency via Source Key."""
+    r = load_refund(row)
+    if not r:
+        return Outcome(False, f"Row {row} is empty")
+    if not r.sent:
+        return Outcome(False, "Not sent yet — use the Trigger dropdown to send it the first time.")
+    out = send_learner_email(r, approver_name, allow_resend=True)
+    write_refund(row, "result", ("✅ " if out.ok else "❌ ") + out.message)
+    return out
 
 
 # ---------------------------------------------------------------------------

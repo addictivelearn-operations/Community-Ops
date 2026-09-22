@@ -121,6 +121,10 @@ order: Zoho ticket + learner email + close, then tracker row + Doc + finance
 email **from your Gmail** (still against the finance team's sheet — see §3a).
 The row page shows both emails exactly as they will go out, and **Retry team
 handoff** for a partial failure — it only does what is still missing.
+**Send again** (22 Sep 2026) re-sends the learner email on an already-sent
+row — a brand new Zoho ticket, exactly like the first send, stacking a new
+timestamp on top of the old one. It never touches the team handoff, which
+keeps its own separate Retry button and its own Source Key idempotency.
 
 **Read-only export** (21 Sep 2026) — `GET /api/refunds.json` returns every
 refund row as JSON for the Master Refund Tracker's "Community Refunds" tab.

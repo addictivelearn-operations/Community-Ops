@@ -381,6 +381,12 @@ def refund_handoff(row: int, u: User = Depends(require_editor)):
     return back(f"/refunds/{row}", "Team: " + out.message, out.ok)
 
 
+@app.post("/refunds/{row}/resend")
+def refund_resend(row: int, u: User = Depends(require_editor)):
+    out = refunds.resend_learner_email(row, u.display)
+    return back(f"/refunds/{row}", "Learner: " + out.message, out.ok)
+
+
 @app.post("/refunds/{row}/delete")
 def refund_delete(row: int, u: User = Depends(require_superuser)):
     ok = delete_refund(row)

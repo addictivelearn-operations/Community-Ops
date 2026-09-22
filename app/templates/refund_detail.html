@@ -57,9 +57,21 @@
   </div>
 </div>
 
+{% if r.sent %}
+<div class="card">
+  <p><span class="badge sent">Learner emailed</span> on {{ r.sent_at.splitlines()[0] }}</p>
+  {% if can_edit %}
+  <form method="post" action="/refunds/{{ r.row }}/resend" class="actions"
+        onsubmit="return confirm('This learner was ALREADY emailed on {{ r.sent_at.splitlines()[0] }}. Send the refund email AGAIN to {{ r.email }}?\n\nA NEW Zoho ticket is created and closed, exactly like the first send — this does not touch the team handoff.')">
+    <button class="danger">Send again</button>
+    <span class="small mute">Same as the sheet menu's "Send refund email for the selected row" — a new Zoho ticket, a new timestamp stacked on top of the old one.</span>
+  </form>
+  {% endif %}
+</div>
+{% endif %}
+
 {% if r.sent and not r.no_order %}
 <div class="card">
-  <p><span class="badge sent">Learner emailed</span> on {{ r.sent_at.splitlines()[0] }} — cannot be emailed again from here.</p>
   {% if can_edit %}
   <form method="post" action="/refunds/{{ r.row }}/handoff" class="actions"
         onsubmit="return confirm('Retry the team handoff for row {{ r.row }}? Only what is missing on the tracker row is done (row, doc, email). The email goes out from {{ user.email }}.')">
