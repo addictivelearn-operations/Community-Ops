@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import course_master, google, migrate, refund_intake, refunds, replies, scheduler, zoho, zoho_sync
+from . import course_master, google, migrate, refund_intake, refunds, replies, scheduler, tracker_app, zoho, zoho_sync
 from .config import RF_CURRENCY, settings
 from .db import get_conn, get_state, init_db
 from .store import (MAIN_EDITABLE, MAIN_HEADERS, REFUND_EDITABLE, REFUND_HEADERS, STATUS_FALLBACK,
@@ -349,6 +349,12 @@ def refund_detail(request: Request, row: int, u: User = Depends(require_user)):
     if not r:
         raise HTTPException(404, f"Row {row} is empty")
     d = refunds.handoff_data(r, u.display, u.email)
+    tracker_lookup = None
+    if u.is_superuser and tracker_app.configured():
+        try:
+            tracker_lookup = tracker_app.find(r.key)
+        except tracker_app.TrackerError as e:
+            tracker_lookup = {"error": str(e)}
     return render(request, "refund_detail.html", r=r,
                   headers=REFUND_HEADERS,
                   trigger_options=TRIGGER_FALLBACK,
@@ -357,7 +363,8 @@ def refund_detail(request: Request, row: int, u: User = Depends(require_user)):
                   learner_html=refunds.learner_email_html(r),
                   team_html=refunds.team_email_html(d, "(doc link)"),
                   recipients=refunds.recipients(),
-                  reply_to=d.approved_by_email)
+                  reply_to=d.approved_by_email,
+                  tracker_lookup=tracker_lookup)
 
 
 @app.post("/refunds/{row}/approve")

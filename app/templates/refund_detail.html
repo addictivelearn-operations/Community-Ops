@@ -6,6 +6,25 @@
 {% if not can_edit %}<p class="small mute">View-only — ask an editor to change anything here.</p>{% endif %}
 
 {% if is_superuser %}
+<div class="card" style="font-size:12.5px">
+  <div class="kv">
+    <div>Source Key</div><div><code>{{ r.key }}</code>
+      <span class="small mute">timestamp + email — identity the Master Refund Tracker app matches on</span></div>
+    <div>Tracker app says</div><div>
+      {% if tracker_lookup is none %}
+        <span class="mute">not configured, or not checked</span>
+      {% elif tracker_lookup.error %}
+        <span class="warn">{{ tracker_lookup.error }}</span>
+      {% else %}
+        found={{ tracker_lookup.found }} · row={{ tracker_lookup.rowNumber }} ·
+        emailStatus={{ tracker_lookup.emailStatus or '(blank)' }} ·
+        emailSentAt={{ tracker_lookup.emailSentAt or '(blank)' }} ·
+        docLink={{ 'yes' if tracker_lookup.docLink else 'no' }}
+        {% if tracker_lookup.url %}· <a href="{{ tracker_lookup.url }}" target="_blank">open in tracker ↗</a>{% endif %}
+      {% endif %}
+    </div>
+  </div>
+</div>
 <form method="post" action="/refunds/{{ r.row }}/delete" class="actions" style="justify-content:flex-end"
       onsubmit="return confirm('Delete row {{ r.row }} ({{ r.name }}) from this app’s database?\n\nThis removes the row only — it does NOT undo a Zoho email, tracker row, Doc or finance email already sent. Cannot be undone.')">
   <button class="danger">Delete this row</button>
