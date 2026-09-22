@@ -124,17 +124,28 @@ def fetch_community_tickets(existing_ids: set[str]) -> list[dict]:
     results = []
 
     for page in range(settings.max_list_pages):
-        tickets = zoho.tickets_page(from_=page * 100, limit=100)
+        # sortBy=-createdTime, NOT the default -modifiedTime (22 Sep 2026):
+        # modifiedTime turned out to be null for essentially every ticket in
+        # this org, not just "some" as first thought on 21 Sep — so a
+        # "-modifiedTime" sort returns tickets in an order that has nothing
+        # to do with recency (verified live: page 0 spanned 24 Aug-20 Sep,
+        # with same-day tickets from minutes earlier never appearing at all).
+        # Since the loop below stops paging as soon as it sees one ticket
+        # older than cutoff, an unreliable sort meant it could stop before
+        # ever reaching a genuinely new ticket — and because run() advances
+        # LAST_SYNC_ISO even when 0 candidates are found, a ticket missed
+        # this way was never looked at again. createdTime, unlike
+        # modifiedTime, is always present and Zoho does sort by it correctly
+        # (verified live: a `-createdTime` page came back strictly
+        # descending, second-by-second).
+        tickets = zoho.tickets_page(from_=page * 100, limit=100, sort="-createdTime")
         if not tickets:
             break
         reached_cutoff = False
         for t in tickets:
-            # Zoho omits modifiedTime for some tickets (observed on real data,
-            # 21 Sep 2026 — apparently tickets never modified after creation);
-            # createdTime is always present as a fallback.
-            modified_time = t.get("modifiedTime") or t.get("createdTime")
-            mod = _parse_iso(modified_time)
-            if mod < cutoff:
+            created_time = t.get("createdTime")
+            modified_time = t.get("modifiedTime") or created_time
+            if _parse_iso(created_time) < cutoff:
                 reached_cutoff = True
                 continue
             team_name = ((t.get("team") or {}).get("name") or "").lower()

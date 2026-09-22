@@ -187,6 +187,28 @@ Status:
   `scheduler.py` (APScheduler, in-process, same cadence as the Apps Script
   triggers). `/diagnostics` has manual "run now" buttons for each job plus
   sync-cursor visibility, for testing ahead of the schedule.
+- [x] **Ticket discovery was silently skipping tickets (fixed 22 Sep 2026)** —
+  `fetch_community_tickets()` paged Zoho's ticket list sorted by
+  `-modifiedTime` and stopped as soon as it saw one ticket older than its
+  cutoff, trusting that sort to mean everything after it was older too. In
+  this org `modifiedTime` is null for essentially every ticket, so that sort
+  returns tickets in an order that has nothing to do with recency — verified
+  live: a `-modifiedTime` page spanned 24 Aug–20 Sep while same-day tickets
+  from minutes earlier never appeared in the first ten pages at all. Because
+  `run()` advances `LAST_SYNC_ISO` even when it finds 0 candidates, a ticket
+  the scan happened to miss this way was gone for good — no future sync ever
+  looks at it again (only `refresh_statuses()` revisits tickets already in
+  the database, it doesn't discover new ones). Fixed by sorting on
+  `-createdTime` instead, which Zoho does populate and does sort correctly
+  (verified live, strictly descending second-by-second) — and comparing the
+  cutoff against `createdTime` specifically rather than the old
+  `modifiedTime`-or-`createdTime` fallback, so the sort key and the
+  comparison key always agree. `refresh_statuses()` (status/owner refresh
+  for tickets already imported) still sorts on `-modifiedTime` and likely
+  has the same unreliability for catching status changes on older tickets —
+  not fixed here, since swapping it to `-createdTime` the same way would be
+  wrong (a ticket's createdTime never changes, so it wouldn't help find
+  which older tickets just changed status); it needs its own fix.
 - [ ] Needs before it can run for real: `ANTHROPIC_API_KEY` in `.env` (not
   currently set anywhere — see HANDOVER.txt), and `COURSE_SHEET_TAB` set
   explicitly (the Course Master spreadsheet's *first* tab, which the empty
