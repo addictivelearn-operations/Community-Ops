@@ -29,6 +29,14 @@
     <button>Run ticket sync now</button>
     <span class="small mute">Pulls new Community Team tickets from Zoho, extracts learner details, inserts into the database. Also runs on the schedule (see HANDOVER.txt / README §3a).</span>
   </form>
+  <form method="post" action="/admin/sync/tickets/backfill" class="actions"
+        onsubmit="return confirm('Rewind the ticket sync cursor and re-scan immediately? For recovering tickets the (now-fixed) discovery bug silently skipped before 22 Sep 2026 — safe to run more than once, existing tickets are never touched twice. Check the result’s “deferred” count and click again if it isn’t 0.')">
+    <label class="small mute">Rewind
+      <input type="number" name="days" value="3" min="1" max="120" style="width:60px">
+      day(s) and run</label>
+    <button class="danger">Backfill missed tickets</button>
+    <span class="small mute">Superuser only. For the ticket-discovery bug fixed 22 Sep 2026 — a normal "Run ticket sync now" only ever looks forward from the cursor, so it can't recover anything already skipped.</span>
+  </form>
   <form method="post" action="/admin/sync/statuses" class="actions">
     <button>Refresh ticket statuses/owners now</button>
     <span class="small mute">Updates status and owner for recently-modified tickets already in the database.</span>

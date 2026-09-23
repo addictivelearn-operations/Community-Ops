@@ -209,6 +209,24 @@ Status:
   not fixed here, since swapping it to `-createdTime` the same way would be
   wrong (a ticket's createdTime never changes, so it wouldn't help find
   which older tickets just changed status); it needs its own fix.
+  **The fix only stops future misses — it doesn't recover past ones**: any
+  ticket the bug already caused `LAST_SYNC_ISO` to advance past is
+  permanently behind the cursor, since an ordinary sync only ever looks
+  forward from it. `/diagnostics` → "Backfill missed tickets" rewinds the
+  cursor by N days (default 3, superuser only) and runs the sync
+  immediately — safe to run more than once, or with a wide N: discovery is
+  still capped at `MAX_LIST_PAGES` tickets per call and every candidate is
+  deduplicated by ticket number regardless of how far back the cursor
+  points, so nothing already in the database gets touched twice. Also open:
+  an OLD ticket transferred into Community Team from another department
+  today still won't be found — its `createdTime` is old, and that's the
+  only signal discovery uses. Zoho's `/tickets/search?assigneeId=...`
+  (confirmed live) returns tickets by current assignment rather than any
+  timestamp, which would catch this correctly, but scanning it on a
+  schedule costs meaningfully more API calls than the incremental sync —
+  this org has hit Zoho's daily cap before (see HANDOVER.txt §5), so it
+  wants a deliberate call on frequency/cost before building it, not a
+  reflexive "sort by something else" fix like this one was.
 - [ ] Needs before it can run for real: `ANTHROPIC_API_KEY` in `.env` (not
   currently set anywhere — see HANDOVER.txt), and `COURSE_SHEET_TAB` set
   explicitly (the Course Master spreadsheet's *first* tab, which the empty

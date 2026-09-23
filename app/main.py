@@ -8,7 +8,7 @@ Run:  uvicorn app.main:app --reload --port 8000   (or run.bat)
 import json
 import sqlite3
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import quote, urlencode
 
@@ -21,7 +21,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from . import course_master, google, migrate, refund_intake, refunds, replies, scheduler, tracker_app, zoho, zoho_sync
 from .config import RF_CURRENCY, settings
-from .db import get_conn, get_state, init_db
+from .db import get_conn, get_state, init_db, set_state
 from .store import (MAIN_EDITABLE, MAIN_HEADERS, REFUND_EDITABLE, REFUND_HEADERS, STATUS_FALLBACK,
                     TRIGGER_FALLBACK, create_test_refund, create_test_ticket, delete_refund,
                     delete_ticket, is_internal, load_refund, load_refunds, load_ticket,
@@ -605,6 +605,28 @@ def admin_resync_replies(u: User = Depends(require_editor)):
 def admin_sync_tickets(u: User = Depends(require_editor)):
     result = zoho_sync.run()
     return back("/diagnostics", f"Ticket sync: {result}", "failed" not in result or not result.get("failed"))
+
+
+@app.post("/admin/sync/tickets/backfill")
+def admin_sync_tickets_backfill(days: int = Form(3), u: User = Depends(require_superuser)):
+    """Rewinds LAST_SYNC_ISO by `days` and runs the ticket sync immediately —
+    for recovering tickets the discovery bug (fixed 22 Sep 2026, see
+    zoho_sync.py) silently skipped before the fix shipped: run() advanced
+    the cursor to "now" even when it found 0 candidates, so anything missed
+    is permanently behind the cursor and an ordinary sync will never look at
+    it again. Safe to run more than once, and safe to pick a wide `days` —
+    discovery is capped at MAX_LIST_PAGES (1000 org-wide tickets) per call
+    regardless of how far back the cursor points, and every candidate is
+    still deduplicated by ticket number, so nothing already in the database
+    gets touched twice. A gap wider than that window (or than BATCH_SIZE
+    tickets processed per run) needs this run again — check `deferred` in
+    the result and click again if it's not 0."""
+    days = max(1, min(days, 120))
+    new_cursor = (datetime.now(settings.tz) - timedelta(days=days)).isoformat()
+    set_state(zoho_sync.LAST_SYNC_KEY, new_cursor)
+    result = zoho_sync.run()
+    return back("/diagnostics", f"Backfill (cursor rewound {days}d to {new_cursor}): {result}",
+               not result.get("failed"))
 
 
 @app.post("/admin/sync/statuses")
