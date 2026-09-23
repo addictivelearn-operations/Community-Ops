@@ -9,9 +9,13 @@
 <p class="small mute">Everything above only reads. "CANNOT OPEN" on a spreadsheet or folder means your account has no access to it — ask for edit access (spreadsheets) or view access (folder). The ticket tracker and Community Refund data live in the app's own database now, not a sheet, so there's nothing to open for those.</p>
 
 {% if sync_errors %}
-<h2>Recent sync errors</h2>
-<div class="card">
+<details class="card">
+  <summary style="cursor:pointer; font-weight:bold;">Recent sync errors ({{ sync_errors|length }})</summary>
   <p class="small mute">Last {{ sync_errors|length }} ticket(s) that failed during a sync/backfill/reassignment run — why a ticket is missing from the app despite a sync having run. A ticket here is safe to retry (sync/backfill/reassignment sweep only ever INSERT OR IGNORE, never overwrite).</p>
+  <form method="post" action="/admin/sync/errors/clear" class="actions"
+        onsubmit="return confirm('Permanently delete all ' + {{ sync_errors|length }} + ' error row(s) from the sync log? This only clears this list — it does not retry anything or touch ticket/refund data.')">
+    <button class="danger">Clear error log</button>
+  </form>
   <table class="grid">
     <thead><tr><th>When</th><th>Ticket</th><th>Email</th><th>ms</th><th>Error</th></tr></thead>
     <tbody>
@@ -20,7 +24,7 @@
     {% endfor %}
     </tbody>
   </table>
-</div>
+</details>
 {% endif %}
 
 {% if can_edit %}

@@ -659,6 +659,13 @@ def admin_sync_course_master(u: User = Depends(require_editor)):
     return back("/diagnostics", f"Course master refresh: {result}", True)
 
 
+@app.post("/admin/sync/errors/clear")
+def admin_clear_sync_errors(u: User = Depends(require_superuser)):
+    with get_conn() as c:
+        n = c.execute("DELETE FROM sync_log WHERE status='ERROR'").rowcount
+    return back("/diagnostics", f"Cleared {n} sync error log row(s).", True)
+
+
 # ---------------------------------------------------------------------------
 # Diagnostics
 # ---------------------------------------------------------------------------
