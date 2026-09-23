@@ -10,6 +10,13 @@ Jobs, matching today's Apps Script cadence:
   - refund intake (Refund_Clean -> refunds table), every
     settings.rf_sync_interval_minutes (default 15)
   - course master ETL, once a day (a slow-moving reference dataset)
+  - reassignment sweep (22 Sep 2026), once a day at 04:00 — the ticket sync
+    above only ever finds tickets by createdTime, so it can't see one
+    reassigned into Community Team from another department after the fact;
+    this is a full Zoho assignee-search scan that can. Deliberately once a
+    day, not on the main schedule: it costs meaningfully more API calls per
+    run than the incremental sync (a full scan, not a small window), and
+    this org has hit Zoho's daily cap before (HANDOVER.txt §5).
 """
 
 import logging
@@ -42,6 +49,14 @@ def _run_full_sync() -> None:
         log.info("refresh_statuses(): %s", result)
     except Exception:  # noqa: BLE001
         log.exception("refresh_statuses() failed")
+
+
+def _run_reassignment_sweep() -> None:
+    try:
+        result = zoho_sync.run_reassignment_sweep()
+        log.info("run_reassignment_sweep(): %s", result)
+    except Exception:  # noqa: BLE001
+        log.exception("run_reassignment_sweep() failed")
 
 
 def _run_refund_intake() -> None:
@@ -83,8 +98,12 @@ def start() -> BackgroundScheduler:
     _scheduler.add_job(_run_course_master, CronTrigger(hour=3, minute=0, timezone=settings.tz),
                        id="course_master", replace_existing=True)
 
+    _scheduler.add_job(_run_reassignment_sweep, CronTrigger(hour=4, minute=0, timezone=settings.tz),
+                       id="reassignment_sweep", replace_existing=True)
+
     _scheduler.start()
-    log.info("Scheduler started: full sync at %s, refund intake every %sm, course master daily at 03:00.",
+    log.info("Scheduler started: full sync at %s, refund intake every %sm, course master daily at "
+            "03:00, reassignment sweep daily at 04:00.",
             settings.schedule_times, settings.rf_sync_interval_minutes)
     return _scheduler
 

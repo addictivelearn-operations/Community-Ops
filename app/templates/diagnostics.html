@@ -37,6 +37,10 @@
     <button class="danger">Backfill missed tickets</button>
     <span class="small mute">Superuser only. For the ticket-discovery bug fixed 22 Sep 2026 — a normal "Run ticket sync now" only ever looks forward from the cursor, so it can't recover anything already skipped.</span>
   </form>
+  <form method="post" action="/admin/sync/tickets/reassigned" class="actions">
+    <button>Run reassignment sweep now</button>
+    <span class="small mute">Full scan of everything Zoho currently has assigned to Community Team, by agent — catches a ticket reassigned in from another department, which the regular ticket sync can't (createdTime doesn't change on reassignment). Also runs daily at 04:00; a full scan costs more API calls than the windowed sync, so it isn't on the main 3x/day schedule.</span>
+  </form>
   <form method="post" action="/admin/sync/statuses" class="actions">
     <button>Refresh ticket statuses/owners now</button>
     <span class="small mute">Updates status and owner for recently-modified tickets already in the database.</span>

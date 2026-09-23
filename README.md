@@ -217,16 +217,52 @@ Status:
   immediately — safe to run more than once, or with a wide N: discovery is
   still capped at `MAX_LIST_PAGES` tickets per call and every candidate is
   deduplicated by ticket number regardless of how far back the cursor
-  points, so nothing already in the database gets touched twice. Also open:
-  an OLD ticket transferred into Community Team from another department
-  today still won't be found — its `createdTime` is old, and that's the
-  only signal discovery uses. Zoho's `/tickets/search?assigneeId=...`
-  (confirmed live) returns tickets by current assignment rather than any
-  timestamp, which would catch this correctly, but scanning it on a
-  schedule costs meaningfully more API calls than the incremental sync —
-  this org has hit Zoho's daily cap before (see HANDOVER.txt §5), so it
-  wants a deliberate call on frequency/cost before building it, not a
-  reflexive "sort by something else" fix like this one was.
+  points, so nothing already in the database gets touched twice.
+- [x] **Reassignment sweep (22 Sep 2026)** — an OLD ticket transferred into
+  Community Team from another department was still invisible to both fixes
+  above: their only signal is `createdTime`, which doesn't change on
+  reassignment. Kawal's call: the escalation risk of missing one outweighs
+  the extra API cost, so build it. `zoho_sync.fetch_reassigned_tickets()`
+  is a full scan of `/tickets/search?assigneeId=<Community Team's agent
+  id>` (confirmed live — the plain `/tickets` LIST endpoint rejects
+  `assigneeId`, search accepts it), which returns tickets by CURRENT
+  assignment, independent of any timestamp. The agent id itself is resolved
+  by name out of `agent_map()` (`zoho.team_agent_id()`), not hardcoded. No
+  cutoff here on purpose — completeness, not recency, is the point — just
+  `REASSIGN_MAX_LIST_PAGES` (default 30, currently ~8 pages/784 tickets for
+  real) as a safety cap. Runs once a day at 04:00 (`scheduler.py`), not on
+  the main 3x/day schedule, since a full scan costs more per run than the
+  incremental sync's small window — also a manual "Run reassignment sweep
+  now" on `/diagnostics`. `run()` and `run_reassignment_sweep()` now share
+  `_process_batch()` (extract, insert, sync_log — the part that was
+  identical either way) so the two entry points differ only in how they
+  find candidates, not in what happens once they have them.
+- [x] **Found and fixed while testing the sweep above: batches were mostly
+  failing "database is locked"** — a real, pre-existing bug in
+  `_process_batch()` (inherited as-is from the original `run()`, not
+  introduced by the refactor), just not exposed until something processed
+  many previously-unseen tickets in one go the way the sweep does.
+  `_process_batch()` wrapped its WHOLE loop (up to 15 tickets) in one `with
+  get_conn() as c:` — Python's sqlite3 module doesn't commit until that
+  block exits, so the first ticket's `INSERT` left an uncommitted write
+  transaction open for the rest of the batch, which can run a minute or
+  more (each ticket does several slow network calls). `process_ticket()`
+  meanwhile opens its OWN separate connections for cache reads/writes
+  (`_lookup_learner_cache`, `_upsert_ai_cache`, ...), and every one of
+  those collided with that long-held lock once contention ran past the
+  10s busy-timeout. Fixed by giving each ticket's write its own
+  connection, opened AFTER `process_ticket()` returns and committed
+  immediately — nothing is ever held open across a network call anymore.
+  Verified against the real Zoho org: the exact same 15-ticket batch went
+  from 14/15 failing (all "database is locked") to 14/15 succeeding (the
+  1 failure was `Gemini error: high demand`, unrelated). A second retry
+  round hit the Gemini **free-tier daily quota** (20 requests/day/key)
+  from the sheer volume of same-day testing — expected, not a bug, and
+  already handled: a ticket that fails for any reason is simply never
+  inserted, so it stays a candidate and gets picked up on the next run.
+  This bug lived in code every ordinary `run()` call has always used too,
+  so it was very likely a real, if less severe, contributor to tickets
+  going missing before today — not just the sort-order bug above.
 - [ ] Needs before it can run for real: `ANTHROPIC_API_KEY` in `.env` (not
   currently set anywhere — see HANDOVER.txt), and `COURSE_SHEET_TAB` set
   explicitly (the Course Master spreadsheet's *first* tab, which the empty

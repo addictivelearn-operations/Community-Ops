@@ -629,6 +629,12 @@ def admin_sync_tickets_backfill(days: int = Form(3), u: User = Depends(require_s
                not result.get("failed"))
 
 
+@app.post("/admin/sync/tickets/reassigned")
+def admin_sync_tickets_reassigned(u: User = Depends(require_editor)):
+    result = zoho_sync.run_reassignment_sweep()
+    return back("/diagnostics", f"Reassignment sweep: {result}", not result.get("failed"))
+
+
 @app.post("/admin/sync/statuses")
 def admin_sync_statuses(u: User = Depends(require_editor)):
     result = zoho_sync.refresh_statuses()

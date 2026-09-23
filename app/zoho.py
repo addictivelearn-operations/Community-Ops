@@ -195,6 +195,31 @@ def tickets_page(from_: int, limit: int = 100, sort: str = "-modifiedTime",
     return body.get("data", [])
 
 
+def team_agent_id() -> str | None:
+    """Community Team's own agent id, resolved by display name out of
+    agent_map() (22 Sep 2026) rather than hardcoded, so it keeps working if
+    that agent account is ever recreated. None if no agent's name matches
+    settings.team_name."""
+    name_lc = settings.team_name.strip().lower()
+    for aid, name in agent_map().items():
+        if name.strip().lower() == name_lc:
+            return aid
+    return None
+
+
+def tickets_by_assignee(assignee_id: str, from_: int, limit: int = 100) -> list[dict]:
+    """One page of /tickets/search filtered to a single assignee (22 Sep
+    2026) — unlike tickets_page (the LIST endpoint, ordered by the
+    org's-always-null modifiedTime), this returns tickets by CURRENT
+    assignment, independent of any timestamp. Confirmed live: assigneeId is
+    accepted here though the plain /tickets LIST endpoint rejects it. Used
+    to catch a ticket reassigned into Community Team from another
+    department, which createdTime-based discovery can never see since
+    createdTime doesn't change on reassignment."""
+    body = get(f"/tickets/search?assigneeId={assignee_id}&limit={limit}&from={from_}") or {}
+    return body.get("data", [])
+
+
 def owner_label(t: dict) -> str:
     """Column B — port of ownerLabel_/agentDisplayName_. An assigned ticket
     gives the owner's name alone; only an unassigned one is qualified by

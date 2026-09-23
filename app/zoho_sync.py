@@ -178,6 +178,41 @@ def fetch_community_tickets(existing_ids: set[str]) -> list[dict]:
     return out
 
 
+def fetch_reassigned_tickets(existing_ids: set[str]) -> list[dict]:
+    """Full scan of everything CURRENTLY assigned to Community Team, via
+    Zoho's assignee search (22 Sep 2026) -- independent of createdTime, so
+    it catches a ticket reassigned in from another department no matter how
+    old it is, which fetch_community_tickets() structurally cannot: that
+    function's cutoff is createdTime, and createdTime never changes on
+    reassignment. No cutoff/early-break here on purpose -- the whole point
+    is completeness, not recency -- just REASSIGN_MAX_LIST_PAGES as a safety
+    cap against runaway pagination."""
+    agent_id = zoho.team_agent_id()
+    if not agent_id:
+        return []
+    dept_map = zoho.department_map()
+    results = []
+    for page in range(settings.reassign_max_list_pages):
+        tickets = zoho.tickets_by_assignee(agent_id, from_=page * 100, limit=100)
+        if not tickets:
+            break
+        for t in tickets:
+            if str(t["ticketNumber"]) in existing_ids:
+                continue
+            if settings.allowed_departments:
+                dept_name_lc = dept_map.get(str(t.get("departmentId", "")), "").lower()
+                if not any(str(d).lower() == dept_name_lc for d in settings.allowed_departments):
+                    continue
+            results.append({
+                "id": t["id"], "ticketNumber": t["ticketNumber"], "email": t.get("email", ""),
+                "departmentName": dept_map.get(str(t.get("departmentId", "")), ""),
+                "modifiedTime": t.get("modifiedTime") or t.get("createdTime"),
+            })
+        if len(tickets) < 100:
+            break
+    return results
+
+
 def _fetch_ticket_details(ticket_id: str) -> dict:
     t = zoho.ticket_full(ticket_id) or {}
     contact = t.get("contact") or {}
@@ -329,6 +364,72 @@ def _to_iso(zoho_time: str) -> str:
 # Run one sync (port of main())
 # ---------------------------------------------------------------------------
 
+def _process_batch(candidates: list[dict]) -> dict:
+    """Processes up to max_tickets_per_run candidates -- fetch/extract/insert
+    each into `tickets` (INSERT OR IGNORE) plus a sync_log line -- and
+    returns {imported, failed, deferred}. Shared by run() (createdTime-
+    windowed discovery) and run_reassignment_sweep() (full assignee-based
+    scan, 22 Sep 2026): both just need "these candidate tickets aren't in
+    the database yet, go get them in." Caller holds _lock.
+
+    Each ticket's writes get their OWN short-lived connection, opened AFTER
+    process_ticket() returns (22 Sep 2026 -- found while testing the
+    reassignment sweep above against real data: batches were failing
+    "database is locked" on most tickets). The previous version wrapped the
+    WHOLE loop in one `with get_conn() as c:` — Python's sqlite3 module
+    doesn't commit until that block exits, so ticket #1's INSERT left an
+    uncommitted write transaction open for the rest of the batch, which
+    could run a minute or more (each ticket does several slow network
+    calls). process_ticket() itself opens separate connections for its own
+    cache reads/writes (_lookup_learner_cache, _upsert_ai_cache, ...), and
+    every one of those collided with that long-held lock. Scoping each
+    ticket's write to its own connection, committed immediately, means
+    nothing is ever held open across a network call."""
+    batch = candidates[:settings.max_tickets_per_run]
+    failures = 0
+
+    for i, ticket in enumerate(batch):
+        started = time.time()
+        try:
+            result = process_ticket(ticket)
+            r = result["row"]
+            with get_conn() as c:
+                c.execute(
+                    """INSERT OR IGNORE INTO tickets
+                       (ticket, ticket_id, owner, created_at, imported_at, brand, name, email,
+                        phone, course, requirement, category, zoho_status, modified_time)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (r["ticket"], r["ticket_id"], r["owner"], r["created_at"],
+                     datetime.now(settings.tz).isoformat(), r["brand"], r["name"], r["email"],
+                     r["phone"], r["course"], r["requirement"], r["category"], r["zoho_status"],
+                     r["modified_time"]))
+                c.execute(
+                    "INSERT INTO sync_log (at, ticket, email, status, ai_used, revenue_used, confidence, ms, error) "
+                    "VALUES (?,?,?,?,?,?,?,?,?)",
+                    (datetime.now(settings.tz).isoformat(), ticket["ticketNumber"], r["email"], "OK",
+                     int(result["stats"]["ai_used"]), int(result["stats"]["revenue_used"]),
+                     str(result["stats"]["confidence"]), int((time.time() - started) * 1000), ""))
+        except Exception as e:  # noqa: BLE001 — one bad ticket must not stop the batch
+            failures += 1
+            with get_conn() as c:
+                c.execute(
+                    "INSERT INTO sync_log (at, ticket, email, status, ai_used, revenue_used, confidence, ms, error) "
+                    "VALUES (?,?,?,?,?,?,?,?,?)",
+                    (datetime.now(settings.tz).isoformat(), ticket["ticketNumber"], ticket.get("email", ""),
+                     "ERROR", 0, 0, "", int((time.time() - started) * 1000), str(e)))
+
+        if (i + 1) % settings.tickets_per_pause == 0:
+            time.sleep(settings.pause_ms / 1000)
+
+    try:
+        categorize.categorize_new_rows(settings.category_max_requests_per_sync)
+    except categorize.CategorizeError:
+        pass  # a categorisation failure must never fail the sync
+
+    return {"imported": len(batch) - failures, "failed": failures,
+           "deferred": len(candidates) - len(batch)}
+
+
 def run() -> dict:
     if not _lock.acquire(blocking=False):
         return {"skipped": "another sync is already running"}
@@ -341,53 +442,31 @@ def run() -> dict:
             set_state(LAST_SYNC_KEY, run_started)
             return {"imported": 0, "failed": 0, "deferred": 0}
 
-        batch = candidates[:settings.max_tickets_per_run]
-        processed_all = len(batch) == len(candidates)
-        failures = 0
-
-        with get_conn() as c:
-            for i, ticket in enumerate(batch):
-                started = time.time()
-                try:
-                    result = process_ticket(ticket)
-                    r = result["row"]
-                    c.execute(
-                        """INSERT OR IGNORE INTO tickets
-                           (ticket, ticket_id, owner, created_at, imported_at, brand, name, email,
-                            phone, course, requirement, category, zoho_status, modified_time)
-                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                        (r["ticket"], r["ticket_id"], r["owner"], r["created_at"],
-                         datetime.now(settings.tz).isoformat(), r["brand"], r["name"], r["email"],
-                         r["phone"], r["course"], r["requirement"], r["category"], r["zoho_status"],
-                         r["modified_time"]))
-                    existing_ids.add(str(r["ticket"]))
-                    c.execute(
-                        "INSERT INTO sync_log (at, ticket, email, status, ai_used, revenue_used, confidence, ms, error) "
-                        "VALUES (?,?,?,?,?,?,?,?,?)",
-                        (datetime.now(settings.tz).isoformat(), ticket["ticketNumber"], r["email"], "OK",
-                         int(result["stats"]["ai_used"]), int(result["stats"]["revenue_used"]),
-                         str(result["stats"]["confidence"]), int((time.time() - started) * 1000), ""))
-                except Exception as e:  # noqa: BLE001 — one bad ticket must not stop the batch
-                    failures += 1
-                    c.execute(
-                        "INSERT INTO sync_log (at, ticket, email, status, ai_used, revenue_used, confidence, ms, error) "
-                        "VALUES (?,?,?,?,?,?,?,?,?)",
-                        (datetime.now(settings.tz).isoformat(), ticket["ticketNumber"], ticket.get("email", ""),
-                         "ERROR", 0, 0, "", int((time.time() - started) * 1000), str(e)))
-
-                if (i + 1) % settings.tickets_per_pause == 0:
-                    time.sleep(settings.pause_ms / 1000)
-
-        try:
-            categorize.categorize_new_rows(settings.category_max_requests_per_sync)
-        except categorize.CategorizeError:
-            pass  # a categorisation failure must never fail the sync
-
-        if processed_all and failures == 0:
+        result = _process_batch(candidates)
+        if result["deferred"] == 0 and result["failed"] == 0:
             set_state(LAST_SYNC_KEY, run_started)
+        return result
+    finally:
+        _lock.release()
 
-        return {"imported": len(batch) - failures, "failed": failures,
-               "deferred": len(candidates) - len(batch)}
+
+def run_reassignment_sweep() -> dict:
+    """Daily catch-all for a ticket reassigned into Community Team from
+    another department (22 Sep 2026) -- createdTime-based discovery (run(),
+    above) can never see this, since createdTime doesn't change on
+    reassignment; only Zoho's assignee-current /tickets/search does. Always
+    a full scan of everything currently assigned to Community Team (see
+    fetch_reassigned_tickets) -- no cursor, nothing to rewind, since the
+    only thing that matters is current assignment, not recency. Shares
+    run()'s lock so the two never write concurrently."""
+    if not _lock.acquire(blocking=False):
+        return {"skipped": "another sync is already running"}
+    try:
+        existing_ids = _existing_ticket_numbers()
+        candidates = fetch_reassigned_tickets(existing_ids)
+        if not candidates:
+            return {"imported": 0, "failed": 0, "deferred": 0}
+        return _process_batch(candidates)
     finally:
         _lock.release()
 

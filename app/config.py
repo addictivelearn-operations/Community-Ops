@@ -257,6 +257,11 @@ class Settings:
     sync_overlap_minutes: int = _int("SYNC_OVERLAP_MINUTES", 5)
     max_tickets_per_run: int = _int("BATCH_SIZE", 15)
     max_list_pages: int = _int("MAX_LIST_PAGES", 10)
+    # The daily reassignment sweep (fetch_reassigned_tickets, 22 Sep 2026) is
+    # a full scan, not a windowed one — currently ~8 pages/784 tickets for
+    # Community Team, grows slowly over time. 30 pages (3,000 tickets) is
+    # headroom, not an expected size.
+    reassign_max_list_pages: int = _int("REASSIGN_MAX_LIST_PAGES", 30)
     tickets_per_pause: int = _int("TICKETS_PER_PAUSE", 100)
     pause_ms: int = _int("PAUSE_MS", 2000)
     max_conversations: int = 50
