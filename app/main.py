@@ -647,6 +647,12 @@ def admin_sync_refunds(u: User = Depends(require_editor)):
     return back("/diagnostics", f"Refund intake: {result}", True)
 
 
+@app.post("/admin/sync/refunds/resync-unsent")
+def admin_resync_unsent_refunds(u: User = Depends(require_editor)):
+    result = refund_intake.resync_unsent()
+    return back("/diagnostics", f"Resync unsent refunds from Refund_Clean: {result}", True)
+
+
 @app.post("/admin/sync/course-master")
 def admin_sync_course_master(u: User = Depends(require_editor)):
     result = course_master.refresh()

@@ -50,6 +50,11 @@
     <button>Run refund intake now</button>
     <span class="small mute">Mirrors new rows from Refund_Clean into the refunds table. Needs the unattended sync identity above to have signed into this app at least once. Run the migration above FIRST — see the confirm prompt.</span>
   </form>
+  <form method="post" action="/admin/sync/refunds/resync-unsent" class="actions"
+        onsubmit="return confirm('Re-pull every column (name, phone, group, reason, funnel, community, amount) from Refund_Clean for every refund row NOT yet emailed, matched by Source Key? A row already emailed is never touched, no matter what. Continue?')">
+    <button>Resync un-sent refunds from Refund_Clean</button>
+    <span class="small mute">For when Refund_Clean itself had bad data (e.g. the course name landing in Reason) that's since been fixed at the source, but already synced into a not-yet-sent row here. Never touches a row once its learner has been emailed.</span>
+  </form>
   <form method="post" action="/admin/sync/course-master" class="actions">
     <button>Refresh course master now</button>
     <span class="small mute">Re-reads the external Course Master sheet into the local mirror used for course-name lookups.</span>

@@ -96,3 +96,65 @@ def run() -> dict:
         except Exception:  # noqa: BLE001
             pass
     return {"inserted": inserted, "skipped_old": skipped_old}
+
+
+def resync_unsent() -> dict:
+    """Re-pulls every column A-J from Refund_Clean for a row already in the
+    database that has NOT been emailed yet (Kawal, 23 Sep 2026: a Refund_Clean
+    bug put the course name in the Reason column for some rows; it's fixed
+    at the source now, but the bad copy already synced in, and re-running
+    run() can't fix it — that only ever inserts a key it hasn't seen before).
+
+    Matched by the same Source Key (timestamp + email) run()/RefundRow.key
+    already use, so a row is only ever touched by the exact form submission
+    it came from — never guessed at by name or email alone. A row once
+    emailed is never touched, no matter what: that's the historical record
+    of what was actually sent, and correcting a since-fixed field is not
+    worth the risk of a mismatch silently rewriting it."""
+    g = GoogleClient(settings.sync_service_account_email)
+    values = g.sheet_values(settings.rf_source_sheet_id, settings.rf_source_tab,
+                            f"A2:{col_letter(SOURCE_LAST_COL)}")
+    by_key: dict[str, list] = {}
+    for row in values:
+        ts_raw = row[0] if len(row) > 0 else ""
+        if not ts_raw:
+            continue
+        ts_dt = serial_to_dt(ts_raw)
+        if ts_dt is None:
+            try:
+                ts_dt = datetime.fromisoformat(str(ts_raw)).replace(tzinfo=settings.tz)
+            except ValueError:
+                continue
+        email = cell(row, 3)
+        ts_ms = int(ts_dt.timestamp() * 1000)
+        by_key[_row_key(ts_ms, ts_dt.isoformat(), email)] = row
+
+    updated = 0
+    unchanged = 0
+    not_in_sheet = 0
+    skipped_sent = 0
+
+    with get_conn() as c:
+        for r in load_refunds():
+            if r.sent:
+                skipped_sent += 1
+                continue
+            row = by_key.get(r.key)
+            if not row:
+                not_in_sheet += 1
+                continue
+            new = (cell(row, 2), cell(row, 4), cell(row, 5), cell(row, 6),
+                  cell(row, 7), cell(row, 8), cell(row, 9), cell(row, 10))
+            old = (r.name, r.phone, r.group, r.reason, r.funnel, r.funnel_final,
+                  r.community, r.amount)
+            if new == old:
+                unchanged += 1
+                continue
+            c.execute(
+                "UPDATE refunds SET name=?, phone=?, group_name=?, reason=?, funnel=?, "
+                "funnel_final=?, community=?, amount=? WHERE id=?",
+                (*new, r.row))
+            updated += 1
+
+    return {"updated": updated, "unchanged": unchanged, "not_in_sheet": not_in_sheet,
+           "skipped_sent": skipped_sent}

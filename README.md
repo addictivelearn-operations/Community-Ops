@@ -263,6 +263,25 @@ Status:
   This bug lived in code every ordinary `run()` call has always used too,
   so it was very likely a real, if less severe, contributor to tickets
   going missing before today — not just the sort-order bug above.
+- [x] **Resync un-sent refunds from Refund_Clean (23 Sep 2026)** — a
+  Refund_Clean bug (since fixed at the source) had put the course name in
+  the Reason column for some rows; those already synced into the database
+  with the bad data, and `refund_intake.run()` can't fix that — it only
+  ever inserts a Source Key it hasn't seen before, never revisits one
+  already there. `refund_intake.resync_unsent()` re-reads Refund_Clean A-J
+  and, for every LOCAL row matched by the same Source Key (timestamp +
+  email) that has NOT been sent yet, overwrites name/phone/group/reason/
+  funnel/funnel_final/community/amount with the sheet's current values. A
+  row already emailed is never touched, no matter what — Kawal's explicit
+  call, to keep the historical record of what was actually sent intact.
+  `POST /admin/sync/refunds/resync-unsent` + a Diagnostics button, same
+  `require_editor` tier as the other sync buttons (in practice
+  superuser-only in the UI, since only Kawal can see `/diagnostics` at
+  all — see the access-tiers section). Verified against real data: cloned
+  a real sent row's Source Key onto a temporary un-sent test row with
+  deliberately wrong reason/community, ran the resync, confirmed the real
+  sent row was completely untouched while the test row's data was pulled
+  back to match the sheet exactly, then deleted the test row.
 - [ ] Needs before it can run for real: `ANTHROPIC_API_KEY` in `.env` (not
   currently set anywhere — see HANDOVER.txt), and `COURSE_SHEET_TAB` set
   explicitly (the Course Master spreadsheet's *first* tab, which the empty
