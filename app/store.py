@@ -388,3 +388,20 @@ REFUND_HEADERS = [
     ("K", "Brand"), ("L", ""), ("M", ""), ("N", "Trigger"), ("O", "Sent"), ("P", "Trigger by"),
     ("Q", "Reply status"), ("R", "Team handoff"),
 ]
+
+# CSV export — same column order as the list-page tables (Row + one cell per
+# header above), so a downloaded file reads exactly like what's on screen.
+TICKET_CSV_HEADER = ["Row"] + [label or col for col, label in MAIN_HEADERS]
+REFUND_CSV_HEADER = ["Row"] + [label or col for col, label in REFUND_HEADERS]
+
+
+def ticket_csv_row(t: TicketRow) -> list:
+    return [t.row, t.ticket, t.owner, t.created, t.imported_at, t.brand, t.name, t.email, t.phone,
+           t.course, t.requirement, t.resolution, t.res_status, t.trigger, t.last_sent_line,
+           t.sent_by, t.category, t.result, t.zoho_status]
+
+
+def refund_csv_row(r: RefundRow) -> list:
+    return [r.row, r.timestamp, r.name, r.email, r.phone, r.group, r.reason, r.funnel,
+           r.funnel_final, r.community, r.amount, r.brand, r.spare_l, r.spare_m, r.trigger,
+           (r.sent_at.splitlines()[0] if r.sent_at else ""), r.sent_by, r.result, r.handoff]

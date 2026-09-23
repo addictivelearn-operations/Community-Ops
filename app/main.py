@@ -5,6 +5,8 @@ refunds.py and replies.py, the integrations in google.py and zoho.py.
 Run:  uvicorn app.main:app --reload --port 8000   (or run.bat)
 """
 
+import csv
+import io
 import json
 import sqlite3
 from contextlib import asynccontextmanager
@@ -14,7 +16,7 @@ from urllib.parse import quote, urlencode
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request
 from fastapi.exception_handlers import http_exception_handler as fastapi_default_http_exception_handler
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
@@ -22,10 +24,11 @@ from starlette.middleware.sessions import SessionMiddleware
 from . import course_master, google, migrate, refund_intake, refunds, replies, scheduler, tracker_app, zoho, zoho_sync
 from .config import RF_CURRENCY, settings
 from .db import get_conn, get_state, init_db, set_state
-from .store import (MAIN_EDITABLE, MAIN_HEADERS, REFUND_EDITABLE, REFUND_HEADERS, STATUS_FALLBACK,
-                    TRIGGER_FALLBACK, create_test_refund, create_test_ticket, delete_refund,
-                    delete_ticket, is_internal, load_refund, load_refunds, load_ticket,
-                    load_tickets, parse_amount, save_main_fields, save_refund_fields, write_refund)
+from .store import (MAIN_EDITABLE, MAIN_HEADERS, REFUND_CSV_HEADER, REFUND_EDITABLE, REFUND_HEADERS,
+                    STATUS_FALLBACK, TICKET_CSV_HEADER, TRIGGER_FALLBACK, create_test_refund,
+                    create_test_ticket, delete_refund, delete_ticket, is_internal, load_refund,
+                    load_refunds, load_ticket, load_tickets, parse_amount, refund_csv_row,
+                    save_main_fields, save_refund_fields, ticket_csv_row, write_refund)
 
 init_db()
 
@@ -157,6 +160,15 @@ def back(url: str, msg: str, ok: bool) -> RedirectResponse:
     return RedirectResponse(f"{url}{sep}{urlencode({'msg': msg, 'ok': '1' if ok else '0'})}", status_code=303)
 
 
+def csv_response(header: list[str], rows: list[list], filename: str) -> Response:
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(header)
+    w.writerows(rows)
+    return Response(buf.getvalue(), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
 @app.get("/login", response_class=HTMLResponse)
 def login(request: Request):
     return render(request, "login.html", missing=settings.missing(),
@@ -271,8 +283,10 @@ def dashboard(request: Request, u: User = Depends(require_superuser)):
 # Refunds
 # ---------------------------------------------------------------------------
 
-@app.get("/refunds", response_class=HTMLResponse)
-def refunds_list(request: Request, u: User = Depends(require_user)):
+def _filtered_refunds(request: Request) -> tuple[list, str, str]:
+    """Same view/search filtering refunds_list applies, factored out so the
+    CSV export ("download all filtered") sees exactly the rows the list page
+    would show, not the unfiltered table."""
     view = request.query_params.get("view", "open")
     q = request.query_params.get("q", "").strip().lower()
     rows = load_refunds()
@@ -283,9 +297,44 @@ def refunds_list(request: Request, u: User = Depends(require_user)):
     if q:
         rows = [r for r in rows if q in (r.name + " " + r.email + " " + r.community + " " + r.phone).lower()]
     rows.reverse()
+    return rows, view, q
+
+
+@app.get("/refunds", response_class=HTMLResponse)
+def refunds_list(request: Request, u: User = Depends(require_user)):
+    rows, view, q = _filtered_refunds(request)
     return render(request, "refunds.html", view=view, q=q, headers=REFUND_HEADERS,
                   trigger_options=TRIGGER_FALLBACK,
                   **paginate(request, rows))
+
+
+@app.get("/refunds/export.csv")
+def refunds_export(request: Request, u: User = Depends(require_user)):
+    """?scope=page exports just the current page (same slice paginate() would
+    show); anything else exports every row matching the current view/search."""
+    rows, view, _ = _filtered_refunds(request)
+    if request.query_params.get("scope") == "page":
+        rows = paginate(request, rows)["rows"]
+    stamp = datetime.now(settings.tz).strftime("%Y%m%d-%H%M")
+    return csv_response(REFUND_CSV_HEADER, [refund_csv_row(r) for r in rows], f"refunds-{view}-{stamp}.csv")
+
+
+@app.post("/refunds/export-selected.csv")
+def refunds_export_selected(ids: list[int] = Form([]), u: User = Depends(require_user)):
+    if not ids:
+        return back("/refunds", "No rows selected to download.", False)
+    id_set = set(ids)
+    rows = [r for r in load_refunds() if r.row in id_set]
+    stamp = datetime.now(settings.tz).strftime("%Y%m%d-%H%M")
+    return csv_response(REFUND_CSV_HEADER, [refund_csv_row(r) for r in rows], f"refunds-selected-{stamp}.csv")
+
+
+@app.post("/refunds/bulk-delete")
+def refunds_bulk_delete(ids: list[int] = Form([]), u: User = Depends(require_superuser)):
+    if not ids:
+        return back("/refunds", "No rows selected to delete.", False)
+    n = sum(1 for i in ids if delete_refund(i))
+    return back("/refunds", f"Deleted {n} row(s).", True)
 
 
 def _apply_refund_trigger(g: google.GoogleClient, u: User, row: int, value: str) -> tuple[str, bool]:
@@ -420,8 +469,10 @@ def refund_delete(row: int, u: User = Depends(require_superuser)):
 # Ticket replies
 # ---------------------------------------------------------------------------
 
-@app.get("/replies", response_class=HTMLResponse)
-def replies_list(request: Request, u: User = Depends(require_user)):
+def _filtered_tickets(request: Request) -> tuple[list, str, str]:
+    """Same view/search filtering replies_list applies, factored out so the
+    CSV export ("download all filtered") sees exactly the rows the list page
+    would show, not the unfiltered table."""
     view = request.query_params.get("view", "pending")
     q = request.query_params.get("q", "").strip().lower()
     rows = load_tickets()
@@ -434,9 +485,44 @@ def replies_list(request: Request, u: User = Depends(require_user)):
     if q:
         rows = [t for t in rows if q in (t.ticket + " " + t.name + " " + t.email + " " + t.course + " " + t.requirement).lower()]
     rows.reverse()
+    return rows, view, q
+
+
+@app.get("/replies", response_class=HTMLResponse)
+def replies_list(request: Request, u: User = Depends(require_user)):
+    rows, view, q = _filtered_tickets(request)
     return render(request, "replies.html", view=view, q=q, headers=MAIN_HEADERS,
                   trigger_options=TRIGGER_FALLBACK, status_options=STATUS_FALLBACK,
                   **paginate(request, rows))
+
+
+@app.get("/replies/export.csv")
+def replies_export(request: Request, u: User = Depends(require_user)):
+    """?scope=page exports just the current page (same slice paginate() would
+    show); anything else exports every row matching the current view/search."""
+    rows, view, _ = _filtered_tickets(request)
+    if request.query_params.get("scope") == "page":
+        rows = paginate(request, rows)["rows"]
+    stamp = datetime.now(settings.tz).strftime("%Y%m%d-%H%M")
+    return csv_response(TICKET_CSV_HEADER, [ticket_csv_row(t) for t in rows], f"tickets-{view}-{stamp}.csv")
+
+
+@app.post("/replies/export-selected.csv")
+def replies_export_selected(ids: list[int] = Form([]), u: User = Depends(require_user)):
+    if not ids:
+        return back("/replies", "No rows selected to download.", False)
+    id_set = set(ids)
+    rows = [t for t in load_tickets() if t.row in id_set]
+    stamp = datetime.now(settings.tz).strftime("%Y%m%d-%H%M")
+    return csv_response(TICKET_CSV_HEADER, [ticket_csv_row(t) for t in rows], f"tickets-selected-{stamp}.csv")
+
+
+@app.post("/replies/bulk-delete")
+def replies_bulk_delete(ids: list[int] = Form([]), u: User = Depends(require_superuser)):
+    if not ids:
+        return back("/replies", "No rows selected to delete.", False)
+    n = sum(1 for i in ids if delete_ticket(i))
+    return back("/replies", f"Deleted {n} row(s).", True)
 
 
 @app.post("/replies/{row}/cell")
