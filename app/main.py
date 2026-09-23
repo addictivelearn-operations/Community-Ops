@@ -732,4 +732,9 @@ def diagnostics(request: Request, u: User = Depends(require_superuser)):
     checks["Tracker first auto row"] = str(settings.team_first_auto_row)
     checks["Learner email From"] = settings.rf_from_address
     checks["Reply From (default)"] = settings.reply_default_from
-    return render(request, "diagnostics.html", checks=checks, missing=settings.missing())
+    with get_conn() as c:
+        sync_errors = c.execute(
+            "SELECT at, ticket, email, ms, error FROM sync_log "
+            "WHERE status='ERROR' ORDER BY at DESC LIMIT 20").fetchall()
+    return render(request, "diagnostics.html", checks=checks, missing=settings.missing(),
+                  sync_errors=sync_errors)

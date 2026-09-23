@@ -8,6 +8,21 @@
 </div></div>
 <p class="small mute">Everything above only reads. "CANNOT OPEN" on a spreadsheet or folder means your account has no access to it — ask for edit access (spreadsheets) or view access (folder). The ticket tracker and Community Refund data live in the app's own database now, not a sheet, so there's nothing to open for those.</p>
 
+{% if sync_errors %}
+<h2>Recent sync errors</h2>
+<div class="card">
+  <p class="small mute">Last {{ sync_errors|length }} ticket(s) that failed during a sync/backfill/reassignment run — why a ticket is missing from the app despite a sync having run. A ticket here is safe to retry (sync/backfill/reassignment sweep only ever INSERT OR IGNORE, never overwrite).</p>
+  <table class="grid">
+    <thead><tr><th>When</th><th>Ticket</th><th>Email</th><th>ms</th><th>Error</th></tr></thead>
+    <tbody>
+    {% for e in sync_errors %}
+    <tr><td>{{ e['at'] }}</td><td>{{ e['ticket'] }}</td><td>{{ e['email'] }}</td><td>{{ e['ms'] }}</td><td class="wrap">{{ e['error'] }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
 {% if can_edit %}
 <h2>Data migration</h2>
 <div class="card">
