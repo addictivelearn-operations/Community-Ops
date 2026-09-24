@@ -34,7 +34,7 @@
       <label><input type="checkbox" name="owner" value="__all__" class="filter-all" {{ 'checked' if '__all__' in owners }}> All owners</label>
       <hr>
       {% for o in all_owners %}
-      <label><input type="checkbox" name="owner" value="{{ o['value'] }}" class="filter-one" {{ 'checked' if '__all__' not in owners and o['value'] in owners }}> {{ o['value'] }} ({{ o['n'] }})</label>
+      <label><input type="checkbox" name="owner" value="{{ o['value'] }}" class="filter-one" {{ 'checked' if '__all__' in owners or o['value'] in owners }}> {{ o['value'] }} ({{ o['n'] }})</label>
       {% endfor %}
     </div>
   </div>
@@ -45,7 +45,7 @@
       <label><input type="checkbox" name="status" value="__all__" class="filter-all" {{ 'checked' if '__all__' in statuses }}> All statuses</label>
       <hr>
       {% for s in all_statuses %}
-      <label><input type="checkbox" name="status" value="{{ s['value'] }}" class="filter-one" {{ 'checked' if '__all__' not in statuses and s['value'] in statuses }}> {{ s['value'] }} ({{ s['n'] }})</label>
+      <label><input type="checkbox" name="status" value="{{ s['value'] }}" class="filter-one" {{ 'checked' if '__all__' in statuses or s['value'] in statuses }}> {{ s['value'] }} ({{ s['n'] }})</label>
       {% endfor %}
     </div>
   </div>
@@ -56,7 +56,7 @@
       <label><input type="checkbox" name="trigger" value="__all__" class="filter-all" {{ 'checked' if '__all__' in triggers }}> All triggers</label>
       <hr>
       {% for t in all_triggers %}
-      <label><input type="checkbox" name="trigger" value="{{ t['value'] }}" class="filter-one" {{ 'checked' if '__all__' not in triggers and t['value'] in triggers }}> {{ t['value'] or '(blank)' }} ({{ t['n'] }})</label>
+      <label><input type="checkbox" name="trigger" value="{{ t['value'] }}" class="filter-one" {{ 'checked' if '__all__' in triggers or t['value'] in triggers }}> {{ t['value'] or '(blank)' }} ({{ t['n'] }})</label>
       {% endfor %}
     </div>
   </div>
@@ -160,16 +160,21 @@
       closeAll();
       panel.hidden = !wasHidden;
     });
+    // Excel-style "(Select All)": checking/unchecking it sets every specific
+    // value to match (so "All" checked ALSO shows every value checked, not
+    // just the "All" box, to avoid the "is this really everything?" doubt);
+    // manually toggling any one specific value always drops out of "All"
+    // mode, since the selection is no longer "everything" once one differs.
     var allBox = dd.querySelector('.filter-all');
     var oneBoxes = function () { return dd.querySelectorAll('.filter-one'); };
     if (allBox) {
       allBox.addEventListener('change', function () {
-        if (allBox.checked) oneBoxes().forEach(function (b) { b.checked = false; });
+        oneBoxes().forEach(function (b) { b.checked = allBox.checked; });
       });
     }
     oneBoxes().forEach(function (b) {
       b.addEventListener('change', function () {
-        if (b.checked && allBox) allBox.checked = false;
+        if (allBox) allBox.checked = false;
       });
     });
   });
