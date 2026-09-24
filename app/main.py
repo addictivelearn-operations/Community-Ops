@@ -721,6 +721,16 @@ def admin_sync_tickets_reassigned(u: User = Depends(require_editor)):
     return back("/diagnostics", f"Reassignment sweep: {result}", not result.get("failed"))
 
 
+@app.post("/admin/sync/tickets/backfill-extraction")
+def admin_backfill_extraction(u: User = Depends(require_editor)):
+    """Also runs automatically at the end of every sync, capped the same way
+    (see _process_batch / EXTRACTION_BACKFILL_MAX_PER_SYNC); this button is
+    just for checking the result right now instead of waiting for the next
+    scheduled sync."""
+    result = zoho_sync.backfill_extraction(settings.extraction_backfill_max_per_sync)
+    return back("/diagnostics", f"Extraction backfill: {result}", not result.get("still_pending"))
+
+
 @app.post("/admin/sync/statuses")
 def admin_sync_statuses(u: User = Depends(require_editor)):
     result = zoho_sync.refresh_statuses()
@@ -804,6 +814,10 @@ def diagnostics(request: Request, u: User = Depends(require_superuser)):
     checks["Course master mirror"] = f"{course_rows} row(s)" + ("" if course_rows else " — run the refresh below")
     checks["Ticket sync cursor"] = get_state(zoho_sync.LAST_SYNC_KEY) or "(never run)"
     checks["Status sweep cursor"] = get_state(zoho_sync.STATUS_SYNC_KEY) or "(never run)"
+    with get_conn() as c:
+        extraction_pending_count = c.execute(
+            "SELECT COUNT(*) AS n FROM tickets WHERE extraction_pending = 1").fetchone()["n"]
+    checks["Extraction backfill pending"] = f"{extraction_pending_count} ticket(s) — name/phone/course still owed from a Gemini outage at insert time"
     checks["Gemini / Revenue configured"] = (
         f"Gemini (extraction fallback + categorisation): {'yes' if settings.gemini_api_key else 'NO — GEMINI_API_KEY not set'}, "
         f"Revenue: {'yes' if settings.revenue_api_url else 'no'}")
@@ -830,4 +844,4 @@ def diagnostics(request: Request, u: User = Depends(require_superuser)):
             "SELECT at, ticket, email, ms, error FROM sync_log "
             "WHERE status='ERROR' ORDER BY at DESC LIMIT 20").fetchall()
     return render(request, "diagnostics.html", checks=checks, missing=settings.missing(),
-                  sync_errors=sync_errors)
+                  sync_errors=sync_errors, extraction_pending_count=extraction_pending_count)

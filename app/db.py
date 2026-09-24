@@ -38,7 +38,8 @@ CREATE TABLE IF NOT EXISTS tickets (
     category      TEXT NOT NULL DEFAULT '',
     result        TEXT NOT NULL DEFAULT '',
     zoho_status   TEXT NOT NULL DEFAULT '',
-    modified_time TEXT NOT NULL DEFAULT ''   -- Zoho's modifiedTime, for the AI cache
+    modified_time TEXT NOT NULL DEFAULT '',  -- Zoho's modifiedTime, for the AI cache
+    extraction_pending INTEGER NOT NULL DEFAULT 0  -- 1 = name/phone/course still owed (Gemini failed at insert)
 );
 
 CREATE TABLE IF NOT EXISTS refunds (
@@ -132,6 +133,7 @@ def _connect() -> sqlite3.Connection:
 # day that happens, rather than editing SCHEMA and assuming it will apply.
 _MIGRATIONS = [
     ("course_purchases", "phone", "ALTER TABLE course_purchases ADD COLUMN phone TEXT NOT NULL DEFAULT ''"),
+    ("tickets", "extraction_pending", "ALTER TABLE tickets ADD COLUMN extraction_pending INTEGER NOT NULL DEFAULT 0"),
 ]
 
 

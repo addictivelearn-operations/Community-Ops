@@ -341,6 +341,14 @@ class Settings:
     category_time_budget_seconds: int = _int("CATEGORY_TIME_BUDGET_SECONDS", 270)
     category_max_existing_labels: int = _int("CATEGORY_MAX_EXISTING_LABELS", 60)
 
+    # A ticket a Gemini outage forced in with blank name/phone/course (see
+    # zoho_sync.process_ticket's extraction_pending) never becomes a sync
+    # candidate again on its own, so this is its only way back to Gemini —
+    # capped separately from CATEGORY_MAX_REQUESTS_PER_SYNC since each retry
+    # here is a full ticket (Zoho detail + conversations + one Gemini call),
+    # not one shared batched call for up to 40 tickets like categorisation.
+    extraction_backfill_max_per_sync: int = _int("EXTRACTION_BACKFILL_MAX_PER_SYNC", 5)
+
     # --- Refund intake (port of RF_01_Sync.gs) -----------------------------------
     rf_source_sheet_id: str = _get("RF_SOURCE_SHEET_ID", "1WfKaoIbJGMMLBsHq981DrW85Iz1W1Q7gfeSdqwX8xhU")
     rf_source_tab: str = _get("RF_SOURCE_TAB", "Refund_Clean")

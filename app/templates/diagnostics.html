@@ -60,6 +60,10 @@
     <button>Run reassignment sweep now</button>
     <span class="small mute">Full scan of everything Zoho currently has assigned to Community Team, by agent — catches a ticket reassigned in from another department, which the regular ticket sync can't (createdTime doesn't change on reassignment). Also runs daily at 04:00; a full scan costs more API calls than the windowed sync, so it isn't on the main 3x/day schedule.</span>
   </form>
+  <form method="post" action="/admin/sync/tickets/backfill-extraction" class="actions">
+    <button>Run extraction backfill now</button>
+    <span class="small mute">Retries name/phone/course for tickets stuck blank because Gemini failed when they were first synced ({{ extraction_pending_count }} pending right now) — a ticket already in the database is never a sync candidate again on its own, so this is its only way back to Gemini. Also runs automatically at the end of every sync, capped at {{ settings.extraction_backfill_max_per_sync }} ticket(s) per run.</span>
+  </form>
   <form method="post" action="/admin/sync/statuses" class="actions">
     <button>Refresh ticket statuses/owners now</button>
     <span class="small mute">Updates status and owner for recently-modified tickets already in the database.</span>

@@ -308,6 +308,7 @@ def process_ticket(ticket: dict) -> dict:
     want_summary = settings.ai_enabled and settings.ai_summary_enabled and not trivial
     summary = ""
 
+    ai_failed = False
     if want_extraction or want_summary:
         ai = _lookup_ai_cache(ticket["id"], ticket["modifiedTime"])
         if ai is None:
@@ -327,9 +328,11 @@ def process_ticket(ticket: dict) -> dict:
                 # Gemini. Falling back to an empty result here means the
                 # ticket is still saved now, with whatever the deterministic
                 # extraction above already found (often enough on its own);
-                # only the AI-only fields are blank until a later sync
-                # retries them (nothing is cached, so it will).
+                # extraction_pending below flags it for backfill_extraction()
+                # to retry just the AI leg later, since a ticket already in
+                # the table is never a sync candidate again on its own.
                 ai = {}
+                ai_failed = True
         name = name or ai.get("learner_name", "")
         phone = phone or ai.get("learner_phone", "")
         course = course or ai.get("course_name", "")
@@ -355,6 +358,7 @@ def process_ticket(ticket: dict) -> dict:
             "brand": ticket.get("departmentName", ""), "name": name, "email": learner_email,
             "phone": phone, "course": course, "requirement": summary,
             "zoho_status": details["status"], "modified_time": ticket["modifiedTime"],
+            "extraction_pending": int(want_extraction and ai_failed),
         },
         "stats": stats,
     }
@@ -411,12 +415,13 @@ def _process_batch(candidates: list[dict]) -> dict:
                 c.execute(
                     """INSERT OR IGNORE INTO tickets
                        (ticket, ticket_id, owner, created_at, imported_at, brand, name, email,
-                        phone, course, requirement, category, zoho_status, modified_time)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        phone, course, requirement, category, zoho_status, modified_time,
+                        extraction_pending)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (r["ticket"], r["ticket_id"], r["owner"], r["created_at"],
                      datetime.now(settings.tz).isoformat(), r["brand"], r["name"], r["email"],
                      r["phone"], r["course"], r["requirement"], r["category"], r["zoho_status"],
-                     r["modified_time"]))
+                     r["modified_time"], r["extraction_pending"]))
                 c.execute(
                     "INSERT INTO sync_log (at, ticket, email, status, ai_used, revenue_used, confidence, ms, error) "
                     "VALUES (?,?,?,?,?,?,?,?,?)",
@@ -440,8 +445,80 @@ def _process_batch(candidates: list[dict]) -> dict:
     except categorize.CategorizeError:
         pass  # a categorisation failure must never fail the sync
 
+    backfilled = backfill_extraction(settings.extraction_backfill_max_per_sync)
+
     return {"imported": len(batch) - failures, "failed": failures,
-           "deferred": len(candidates) - len(batch)}
+           "deferred": len(candidates) - len(batch), "extraction_backfilled": backfilled["updated"]}
+
+
+def backfill_extraction(max_tickets: int | None = None) -> dict:
+    """Retries the AI leg for tickets process_ticket() flagged extraction_pending
+    (name/phone/course still blank because Gemini failed at insert time, 24
+    Sep 2026) -- the equivalent of categorize.categorize_new_rows() for those
+    three fields, which otherwise never get revisited: a ticket already in
+    `tickets` is never a sync candidate again on its own (fetch_community_
+    tickets/fetch_reassigned_tickets both exclude existing ticket numbers).
+
+    Re-checks current name/phone/course before asking Gemini for anything --
+    an agent may have filled a field in by hand since the ticket was
+    inserted. Clears the flag on ANY completed Gemini call, even one that
+    found nothing further: that's a fair try, and re-asking forever would
+    just burn quota on a ticket that genuinely has no more to give. Only a
+    renewed GeminiError (Gemini still down) leaves the flag set for next
+    time. Called automatically at the end of every _process_batch(), capped
+    separately from categorisation since each retry here costs a full ticket
+    fetch (Zoho detail + conversations) plus one Gemini call, not one shared
+    batched call covering up to 40 tickets."""
+    if not settings.gemini_api_key:
+        return {"updated": 0, "still_pending": 0, "skipped": "GEMINI_API_KEY not set"}
+
+    with get_conn() as c:
+        rows = c.execute(
+            "SELECT id, ticket_id, name, phone, course FROM tickets "
+            "WHERE extraction_pending = 1 LIMIT ?",
+            (max_tickets if max_tickets else -1,)).fetchall()
+
+    updated = 0
+    still_pending = 0
+    for row in rows:
+        try:
+            details = _fetch_ticket_details(row["ticket_id"])
+            conversations = zoho.conversations(row["ticket_id"])
+            missing = []
+            if not row["name"]:
+                missing.append("learner_name")
+            if not row["phone"]:
+                missing.append("learner_phone")
+            if not row["course"]:
+                missing.append("course_name")
+            if not missing:  # an agent already filled everything in by hand
+                with get_conn() as c:
+                    c.execute("UPDATE tickets SET extraction_pending=0 WHERE id=?", (row["id"],))
+                updated += 1
+                continue
+
+            ai = extraction.extract_with_ai(
+                details, conversations, missing, False,
+                {"name": row["name"], "phone": row["phone"], "course": row["course"]})
+            name = row["name"] or ai.get("learner_name", "")
+            phone = row["phone"] or ai.get("learner_phone", "")
+            new_course = ai.get("course_name", "")
+            course = row["course"] or (extraction.normalise_course_name(new_course) if new_course else "")
+
+            with get_conn() as c:
+                c.execute("UPDATE tickets SET name=?, phone=?, course=?, extraction_pending=0 WHERE id=?",
+                         (name, phone, course, row["id"]))
+
+            learner_email = (details.get("email") or "").strip().lower()
+            if learner_email and not extraction.is_internal_email(learner_email):
+                _upsert_learner_cache(learner_email, name, phone, course)
+            updated += 1
+        except extraction.ExtractionError:
+            still_pending += 1  # Gemini still down -- flag stays set for next time
+        except Exception:  # noqa: BLE001 — one bad ticket must not stop the rest
+            still_pending += 1
+
+    return {"updated": updated, "still_pending": still_pending}
 
 
 def run() -> dict:
