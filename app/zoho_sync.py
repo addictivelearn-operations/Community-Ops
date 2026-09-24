@@ -311,11 +311,25 @@ def process_ticket(ticket: dict) -> dict:
     if want_extraction or want_summary:
         ai = _lookup_ai_cache(ticket["id"], ticket["modifiedTime"])
         if ai is None:
-            ai = extraction.extract_with_ai(
-                details, conversations, missing if want_extraction else [], want_summary,
-                {"name": name, "phone": phone, "course": course})
-            stats["ai_used"] = True
-            _upsert_ai_cache(ticket["id"], ticket["modifiedTime"], ai)
+            try:
+                ai = extraction.extract_with_ai(
+                    details, conversations, missing if want_extraction else [], want_summary,
+                    {"name": name, "phone": phone, "course": course})
+                stats["ai_used"] = True
+                _upsert_ai_cache(ticket["id"], ticket["modifiedTime"], ai)
+            except extraction.ExtractionError:
+                # Gemini being down (quota exhausted / high demand -- both
+                # observed live, 24 Sep 2026) must never cost the ticket its
+                # whole row: previously this exception propagated out of
+                # process_ticket(), _process_batch() logged it as a hard
+                # failure, and the ticket simply never got inserted -- stuck
+                # missing from the app until a future run got lucky with
+                # Gemini. Falling back to an empty result here means the
+                # ticket is still saved now, with whatever the deterministic
+                # extraction above already found (often enough on its own);
+                # only the AI-only fields are blank until a later sync
+                # retries them (nothing is cached, so it will).
+                ai = {}
         name = name or ai.get("learner_name", "")
         phone = phone or ai.get("learner_phone", "")
         course = course or ai.get("course_name", "")
