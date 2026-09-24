@@ -1,17 +1,19 @@
 {% extends "base.html" %}
 {% block title %}Ticket replies · Community Ops{% endblock %}
 {% block body %}
-{% set base = "/replies?view=" ~ view ~ "&q=" ~ (q | urlencode) ~ owners_qs %}
+{% set base = "/replies?view=" ~ view ~ "&q=" ~ (q | urlencode) ~ filters_qs %}
 {% set here = base ~ "&page=" ~ page %}
 <h1>Ticket replies <span class="mute small">— "From 27th May 26 onward", row {{ settings.main_first_row }} down</span></h1>
 <div class="tabs">
-  <a href="/replies?view=pending&q={{ q | urlencode }}{{ owners_qs }}" class="{{ 'on' if view == 'pending' }}">Marked Yes, not sent</a>
-  <a href="/replies?view=unsent&q={{ q | urlencode }}{{ owners_qs }}" class="{{ 'on' if view == 'unsent' }}">All not sent</a>
-  <a href="/replies?view=sent&q={{ q | urlencode }}{{ owners_qs }}" class="{{ 'on' if view == 'sent' }}">Sent</a>
-  <a href="/replies?view=all&q={{ q | urlencode }}{{ owners_qs }}" class="{{ 'on' if view == 'all' }}">All</a>
+  <a href="/replies?view=pending&q={{ q | urlencode }}{{ filters_qs }}" class="{{ 'on' if view == 'pending' }}">Marked Yes, not sent</a>
+  <a href="/replies?view=unsent&q={{ q | urlencode }}{{ filters_qs }}" class="{{ 'on' if view == 'unsent' }}">All not sent</a>
+  <a href="/replies?view=sent&q={{ q | urlencode }}{{ filters_qs }}" class="{{ 'on' if view == 'sent' }}">Sent</a>
+  <a href="/replies?view=all&q={{ q | urlencode }}{{ filters_qs }}" class="{{ 'on' if view == 'all' }}">All</a>
   <form method="get" action="/replies" style="display:inline-block">
     <input type="hidden" name="view" value="{{ view }}">
     {% for o in owners %}<input type="hidden" name="owner" value="{{ o }}">{% endfor %}
+    {% for s in statuses %}<input type="hidden" name="status" value="{{ s }}">{% endfor %}
+    {% for t in triggers %}<input type="hidden" name="trigger" value="{{ t }}">{% endfor %}
     <input name="q" value="{{ q }}" placeholder="ticket #, name, email, course, query" class="search">
   </form>
   {% if can_edit %}
@@ -22,27 +24,50 @@
   {% endif %}
   {% if is_superuser %}<a href="/replies/new">+ Add test entry</a>{% endif %}
 </div>
-{% set owner_summary = 'All owners' if '__all__' in owners else (owners | join(', ') if owners | length <= 2 else owners | length ~ ' owners') %}
-<form method="get" action="/replies" class="actions owner-dropdown" id="owner-form">
+<form method="get" action="/replies" class="actions filters-bar" id="filters-form">
   <input type="hidden" name="view" value="{{ view }}">
   <input type="hidden" name="q" value="{{ q }}">
-  <button type="button" class="btn" id="owner-toggle">Ticket owner: {{ owner_summary }} ▾</button>
-  <span class="small mute">Defaults to "Community Team" only (tickets still in the shared queue).</span>
-  <div class="owner-panel" id="owner-panel" hidden>
-    <label><input type="checkbox" name="owner" value="__all__" class="owner-all" {{ 'checked' if '__all__' in owners }}> All owners</label>
-    <hr>
-    {% for o in all_owners %}
-    <label><input type="checkbox" name="owner" value="{{ o['owner'] }}" class="owner-one" {{ 'checked' if '__all__' not in owners and o['owner'] in owners }}> {{ o['owner'] }} ({{ o['n'] }})</label>
-    {% endfor %}
-    <div class="owner-panel-actions">
-      <button type="submit">Apply</button>
+
+  <div class="filter-dropdown">
+    <button type="button" class="btn filter-toggle">Ticket owner: {{ owner_summary }} ▾</button>
+    <div class="filter-panel" hidden>
+      <label><input type="checkbox" name="owner" value="__all__" class="filter-all" {{ 'checked' if '__all__' in owners }}> All owners</label>
+      <hr>
+      {% for o in all_owners %}
+      <label><input type="checkbox" name="owner" value="{{ o['value'] }}" class="filter-one" {{ 'checked' if '__all__' not in owners and o['value'] in owners }}> {{ o['value'] }} ({{ o['n'] }})</label>
+      {% endfor %}
     </div>
   </div>
+
+  <div class="filter-dropdown">
+    <button type="button" class="btn filter-toggle">Zoho status: {{ status_summary }} ▾</button>
+    <div class="filter-panel" hidden>
+      <label><input type="checkbox" name="status" value="__all__" class="filter-all" {{ 'checked' if '__all__' in statuses }}> All statuses</label>
+      <hr>
+      {% for s in all_statuses %}
+      <label><input type="checkbox" name="status" value="{{ s['value'] }}" class="filter-one" {{ 'checked' if '__all__' not in statuses and s['value'] in statuses }}> {{ s['value'] }} ({{ s['n'] }})</label>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="filter-dropdown">
+    <button type="button" class="btn filter-toggle">Trigger: {{ trigger_summary }} ▾</button>
+    <div class="filter-panel" hidden>
+      <label><input type="checkbox" name="trigger" value="__all__" class="filter-all" {{ 'checked' if '__all__' in triggers }}> All triggers</label>
+      <hr>
+      {% for t in all_triggers %}
+      <label><input type="checkbox" name="trigger" value="{{ t['value'] }}" class="filter-one" {{ 'checked' if '__all__' not in triggers and t['value'] in triggers }}> {{ t['value'] or '(blank)' }} ({{ t['n'] }})</label>
+      {% endfor %}
+    </div>
+  </div>
+
+  <button type="submit">Apply filters</button>
+  <span class="small mute">Owner defaults to "Community Team"; Trigger defaults to everything except "NA".</span>
 </form>
 <p class="small mute">Every column of the sheet is shown; click a row number or name to edit K/L/M and send; the ticket number opens the Zoho conversation in a new tab.
   Choosing <b>Yes</b> in the Trigger column sends immediately, exactly as in the sheet.</p>
 <div class="actions">
-  <a class="btn" href="/replies/export.csv?view={{ view }}&amp;q={{ q | urlencode }}{{ owners_qs }}">⬇ Download all ({{ total }}) · CSV</a>
+  <a class="btn" href="/replies/export.csv?view={{ view }}&amp;q={{ q | urlencode }}{{ filters_qs }}">⬇ Download all ({{ total }}) · CSV</a>
 </div>
 {% include "_pager.html" %}
 {% include "_scrollsync.html" %}
@@ -113,31 +138,41 @@
 </form>
 {% set base = here %}{% include "_pager.html" %}
 <script>
-// Ticket-owner dropdown: collapsed by default, "All owners" and a specific
-// owner are mutually exclusive (checking one clears the other side).
+// Owner / Zoho status / Trigger dropdowns: each collapsed by default,
+// opening one closes the others, and within each its own "All ..." checkbox
+// is mutually exclusive with its specific-value checkboxes.
 (function () {
-  var toggle = document.getElementById('owner-toggle');
-  var panel = document.getElementById('owner-panel');
-  var form = document.getElementById('owner-form');
-  if (!toggle || !panel || !form) return;
-  toggle.addEventListener('click', function (e) {
-    e.stopPropagation();
-    panel.hidden = !panel.hidden;
+  var form = document.getElementById('filters-form');
+  if (!form) return;
+  var dropdowns = Array.prototype.slice.call(form.querySelectorAll('.filter-dropdown'));
+  function closeAll() {
+    dropdowns.forEach(function (dd) { dd.querySelector('.filter-panel').hidden = true; });
+  }
+  dropdowns.forEach(function (dd) {
+    var toggle = dd.querySelector('.filter-toggle');
+    var panel = dd.querySelector('.filter-panel');
+    if (!toggle || !panel) return;
+    toggle.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var wasHidden = panel.hidden;
+      closeAll();
+      panel.hidden = !wasHidden;
+    });
+    var allBox = dd.querySelector('.filter-all');
+    var oneBoxes = function () { return dd.querySelectorAll('.filter-one'); };
+    if (allBox) {
+      allBox.addEventListener('change', function () {
+        if (allBox.checked) oneBoxes().forEach(function (b) { b.checked = false; });
+      });
+    }
+    oneBoxes().forEach(function (b) {
+      b.addEventListener('change', function () {
+        if (b.checked && allBox) allBox.checked = false;
+      });
+    });
   });
   document.addEventListener('click', function (e) {
-    if (!panel.hidden && !form.contains(e.target)) panel.hidden = true;
-  });
-  var allBox = form.querySelector('.owner-all');
-  var oneBoxes = function () { return form.querySelectorAll('.owner-one'); };
-  if (allBox) {
-    allBox.addEventListener('change', function () {
-      if (allBox.checked) oneBoxes().forEach(function (b) { b.checked = false; });
-    });
-  }
-  oneBoxes().forEach(function (b) {
-    b.addEventListener('change', function () {
-      if (b.checked && allBox) allBox.checked = false;
-    });
+    if (!form.contains(e.target)) closeAll();
   });
 })();
 // Bulk checkbox toolbar: select-all, live count, guard against an empty selection.

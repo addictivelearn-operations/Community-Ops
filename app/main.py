@@ -469,23 +469,42 @@ def refund_delete(row: int, u: User = Depends(require_superuser)):
 # Ticket replies
 # ---------------------------------------------------------------------------
 
-ALL_OWNERS = "__all__"
+ALL_VALUES = "__all__"
 DEFAULT_TICKET_OWNERS = ["Community Team"]
+TRIGGER_EXCLUDE_DEFAULT = "NA"
 
 
-def _filtered_tickets(request: Request) -> tuple[list, str, str, list[str]]:
-    """Same view/search/owner filtering replies_list applies, factored out so
-    the CSV export ("download all filtered") sees exactly the rows the list
-    page would show, not the unfiltered table.
+def _filtered_tickets(request: Request) -> dict:
+    """Same view/search/owner/status/trigger filtering replies_list applies,
+    factored out so the CSV export ("download all filtered") sees exactly
+    the rows the list page would show, not the unfiltered table.
 
     Owner defaults to "Community Team" only (21 Sep 2026: a lot of rows sit
     with an individual agent's name, or "Unassigned (...)", once claimed —
-    those aren't what the team works from day to day) when ?owner isn't in
-    the URL at all; passing ?owner=__all__ (the multi-select's own "All
-    owners" option) is how a click asks for every owner instead."""
+    those aren't what the team works from day to day); Zoho status defaults
+    to everything; Trigger defaults to everything EXCEPT "NA" (24 Sep 2026).
+    Each default only applies when its query param is missing from the URL
+    entirely — the corresponding "All ..." checkbox is how a click asks for
+    every value of that filter instead (?owner=__all__ etc.)."""
     view = request.query_params.get("view", "pending")
     q = request.query_params.get("q", "").strip().lower()
+
+    with get_conn() as c:
+        all_owners = c.execute(
+            "SELECT owner AS value, COUNT(*) AS n FROM tickets WHERE owner != '' "
+            "GROUP BY owner ORDER BY n DESC").fetchall()
+        all_statuses = c.execute(
+            "SELECT zoho_status AS value, COUNT(*) AS n FROM tickets WHERE zoho_status != '' "
+            "GROUP BY zoho_status ORDER BY n DESC").fetchall()
+        all_triggers = c.execute(
+            "SELECT trigger_value AS value, COUNT(*) AS n FROM tickets "
+            "GROUP BY trigger_value ORDER BY n DESC").fetchall()
+
     owners = request.query_params.getlist("owner") or list(DEFAULT_TICKET_OWNERS)
+    statuses = request.query_params.getlist("status") or [ALL_VALUES]
+    triggers = request.query_params.getlist("trigger") or [
+        r["value"] for r in all_triggers if r["value"] != TRIGGER_EXCLUDE_DEFAULT]
+
     rows = load_tickets()
     if view == "pending":
         rows = [t for t in rows if t.pending]
@@ -493,41 +512,75 @@ def _filtered_tickets(request: Request) -> tuple[list, str, str, list[str]]:
         rows = [t for t in rows if not t.sent]
     elif view == "sent":
         rows = [t for t in rows if t.sent]
-    if ALL_OWNERS not in owners:
+    if ALL_VALUES not in owners:
         owner_set = set(owners)
         rows = [t for t in rows if t.owner in owner_set]
+    if ALL_VALUES not in statuses:
+        status_set = set(statuses)
+        rows = [t for t in rows if t.zoho_status in status_set]
+    if ALL_VALUES not in triggers:
+        trigger_set = set(triggers)
+        rows = [t for t in rows if t.trigger in trigger_set]
     if q:
         rows = [t for t in rows if q in (t.ticket + " " + t.name + " " + t.email + " " + t.course + " " + t.requirement).lower()]
     rows.reverse()
-    return rows, view, q, owners
+    return {"rows": rows, "view": view, "q": q,
+           "owners": owners, "all_owners": all_owners,
+           "statuses": statuses, "all_statuses": all_statuses,
+           "triggers": triggers, "all_triggers": all_triggers}
 
 
-def _owners_qs(owners: list[str]) -> str:
-    return "".join(f"&owner={quote(o)}" for o in owners)
+def _filters_qs(owners: list[str], statuses: list[str], triggers: list[str]) -> str:
+    parts = [f"&owner={quote(o)}" for o in owners]
+    parts += [f"&status={quote(s)}" for s in statuses]
+    parts += [f"&trigger={quote(t)}" for t in triggers]
+    return "".join(parts)
+
+
+def _filter_summary(selected: list[str], all_values: list[str], all_label: str) -> str:
+    """Short label for a filter's collapsed toggle button — 'All owners',
+    'Community Team', 'All except NA', or 'N selected'."""
+    if ALL_VALUES in selected:
+        return all_label
+    if not selected:
+        return "none"
+    selected_set = set(selected)
+    missing = [v for v in all_values if v not in selected_set]
+    if not missing:
+        return all_label
+    if len(missing) == 1 and len(selected_set) > 1:
+        return f"All except {missing[0] or '(blank)'}"
+    labeled = [s or "(blank)" for s in selected]
+    return ", ".join(labeled) if len(labeled) <= 2 else f"{len(labeled)} selected"
 
 
 @app.get("/replies", response_class=HTMLResponse)
 def replies_list(request: Request, u: User = Depends(require_user)):
-    rows, view, q, owners = _filtered_tickets(request)
-    with get_conn() as c:
-        owner_rows = c.execute(
-            "SELECT owner, COUNT(*) AS n FROM tickets WHERE owner != '' "
-            "GROUP BY owner ORDER BY n DESC").fetchall()
-    return render(request, "replies.html", view=view, q=q, owners=owners,
-                  owners_qs=_owners_qs(owners), all_owners=owner_rows, headers=MAIN_HEADERS,
+    ft = _filtered_tickets(request)
+    filters_qs = _filters_qs(ft["owners"], ft["statuses"], ft["triggers"])
+    return render(request, "replies.html", view=ft["view"], q=ft["q"],
+                  owners=ft["owners"], all_owners=ft["all_owners"],
+                  owner_summary=_filter_summary(ft["owners"], [r["value"] for r in ft["all_owners"]], "All owners"),
+                  statuses=ft["statuses"], all_statuses=ft["all_statuses"],
+                  status_summary=_filter_summary(ft["statuses"], [r["value"] for r in ft["all_statuses"]], "All statuses"),
+                  triggers=ft["triggers"], all_triggers=ft["all_triggers"],
+                  trigger_summary=_filter_summary(ft["triggers"], [r["value"] for r in ft["all_triggers"]], "All triggers"),
+                  filters_qs=filters_qs, headers=MAIN_HEADERS,
                   trigger_options=TRIGGER_FALLBACK, status_options=STATUS_FALLBACK,
-                  **paginate(request, rows))
+                  **paginate(request, ft["rows"]))
 
 
 @app.get("/replies/export.csv")
 def replies_export(request: Request, u: User = Depends(require_user)):
     """?scope=page exports just the current page (same slice paginate() would
-    show); anything else exports every row matching the current view/search/owner."""
-    rows, view, _, _ = _filtered_tickets(request)
+    show); anything else exports every row matching the current view/search/
+    owner/status/trigger."""
+    ft = _filtered_tickets(request)
+    rows = ft["rows"]
     if request.query_params.get("scope") == "page":
         rows = paginate(request, rows)["rows"]
     stamp = datetime.now(settings.tz).strftime("%Y%m%d-%H%M")
-    return csv_response(TICKET_CSV_HEADER, [ticket_csv_row(t) for t in rows], f"tickets-{view}-{stamp}.csv")
+    return csv_response(TICKET_CSV_HEADER, [ticket_csv_row(t) for t in rows], f"tickets-{ft['view']}-{stamp}.csv")
 
 
 @app.post("/replies/export-selected.csv")
