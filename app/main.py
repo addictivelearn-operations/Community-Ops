@@ -46,7 +46,14 @@ app.add_middleware(SessionMiddleware, secret_key=settings.app_secret, same_site=
                    https_only=settings.base_url.startswith("https"))
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 templates = Jinja2Templates(directory=HERE / "templates")
-templates.env.globals.update(settings=settings, zoho_time=zoho.fmt_time)
+# Cache-busting query string for /static/style.css -- browsers cache CSS
+# aggressively by URL, so a style.css edit alone (unlike an HTML template
+# change) can silently keep serving a stale stylesheet to a returning
+# visitor's browser (24 Sep 2026: exactly what broke the filter dropdowns
+# for Kawal — new markup, old CSS). Tied to the file's own mtime so it only
+# changes when the file actually does, and needs no manual bump.
+STATIC_VERSION = str(int((HERE / "static" / "style.css").stat().st_mtime))
+templates.env.globals.update(settings=settings, zoho_time=zoho.fmt_time, static_version=STATIC_VERSION)
 
 
 # ---------------------------------------------------------------------------
