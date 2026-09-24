@@ -13,6 +13,12 @@
     <input type="hidden" name="view" value="{{ view }}">
     <input name="q" value="{{ q }}" placeholder="ticket #, name, email, course, query" class="search">
   </form>
+  {% if can_edit %}
+  <form method="post" action="/admin/sync/tickets" style="display:inline-block" title="Pulls new Community Team tickets from Zoho now, instead of waiting for the 3x/day schedule">
+    <input type="hidden" name="back_to" value="{{ here }}">
+    <button type="submit">⟳ Run ticket sync now</button>
+  </form>
+  {% endif %}
   {% if is_superuser %}<a href="/replies/new">+ Add test entry</a>{% endif %}
 </div>
 <p class="small mute">Every column of the sheet is shown; click a row number or name to edit K/L/M and send; the ticket number opens the Zoho conversation in a new tab.
