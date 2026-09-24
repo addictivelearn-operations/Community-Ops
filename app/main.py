@@ -309,9 +309,11 @@ def refunds_list(request: Request, u: User = Depends(require_user)):
 
 
 @app.get("/refunds/export.csv")
-def refunds_export(request: Request, u: User = Depends(require_user)):
+def refunds_export(request: Request, u: User = Depends(require_superuser)):
     """?scope=page exports just the current page (same slice paginate() would
-    show); anything else exports every row matching the current view/search."""
+    show); anything else exports every row matching the current view/search.
+    Superuser only (24 Sep 2026) -- a bulk export of names/emails/phones is
+    more sensitive than viewing the same rows one at a time on screen."""
     rows, view, _ = _filtered_refunds(request)
     if request.query_params.get("scope") == "page":
         rows = paginate(request, rows)["rows"]
@@ -320,7 +322,7 @@ def refunds_export(request: Request, u: User = Depends(require_user)):
 
 
 @app.post("/refunds/export-selected.csv")
-def refunds_export_selected(ids: list[int] = Form([]), u: User = Depends(require_user)):
+def refunds_export_selected(ids: list[int] = Form([]), u: User = Depends(require_superuser)):
     if not ids:
         return back("/refunds", "No rows selected to download.", False)
     id_set = set(ids)
@@ -571,10 +573,12 @@ def replies_list(request: Request, u: User = Depends(require_user)):
 
 
 @app.get("/replies/export.csv")
-def replies_export(request: Request, u: User = Depends(require_user)):
+def replies_export(request: Request, u: User = Depends(require_superuser)):
     """?scope=page exports just the current page (same slice paginate() would
     show); anything else exports every row matching the current view/search/
-    owner/status/trigger."""
+    owner/status/trigger. Superuser only (24 Sep 2026) -- a bulk export of
+    names/emails/phones is more sensitive than viewing the same rows one at
+    a time on screen."""
     ft = _filtered_tickets(request)
     rows = ft["rows"]
     if request.query_params.get("scope") == "page":
@@ -584,7 +588,7 @@ def replies_export(request: Request, u: User = Depends(require_user)):
 
 
 @app.post("/replies/export-selected.csv")
-def replies_export_selected(ids: list[int] = Form([]), u: User = Depends(require_user)):
+def replies_export_selected(ids: list[int] = Form([]), u: User = Depends(require_superuser)):
     if not ids:
         return back("/replies", "No rows selected to download.", False)
     id_set = set(ids)

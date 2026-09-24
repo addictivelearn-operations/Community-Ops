@@ -66,27 +66,29 @@
 </form>
 <p class="small mute">Every column of the sheet is shown; click a row number or name to edit K/L/M and send; the ticket number opens the Zoho conversation in a new tab.
   Choosing <b>Yes</b> in the Trigger column sends immediately, exactly as in the sheet.</p>
+{% if is_superuser %}
 <div class="actions">
   <a class="btn" href="/replies/export.csv?view={{ view }}&amp;q={{ q | urlencode }}{{ filters_qs }}">⬇ Download all ({{ total }}) · CSV</a>
 </div>
+{% endif %}
 {% include "_pager.html" %}
 {% include "_scrollsync.html" %}
 <form id="bulk-form" method="post" action="/replies/export-selected.csv">
+{% if is_superuser %}
 <div class="actions">
   <button type="submit" onclick="return bulkGuard(this)">⬇ Download selected · CSV</button>
-  {% if is_superuser %}
   <button type="submit" formaction="/replies/bulk-delete" class="danger"
           onclick="return bulkGuard(this) &amp;&amp; confirm('Delete the selected row(s)? This cannot be undone.');">🗑 Delete selected</button>
-  {% endif %}
   <span class="small mute" id="bulk-count">0 selected</span>
 </div>
+{% endif %}
 <div class="scroll">
 <table class="grid">
-<thead><tr><th><input type="checkbox" id="check-all" title="Select all on this page"></th><th>Row</th>{% for col, label in headers %}<th title="Column {{ col }}">{{ col }} · {{ label }}</th>{% endfor %}</tr></thead>
+<thead><tr>{% if is_superuser %}<th><input type="checkbox" id="check-all" title="Select all on this page"></th>{% endif %}<th>Row</th>{% for col, label in headers %}<th title="Column {{ col }}">{{ col }} · {{ label }}</th>{% endfor %}</tr></thead>
 <tbody>
 {% for t in rows %}
 <tr>
-  <td><input type="checkbox" name="ids" value="{{ t.row }}" class="row-check"></td>
+  {% if is_superuser %}<td><input type="checkbox" name="ids" value="{{ t.row }}" class="row-check"></td>{% endif %}
   <td><a href="/replies/{{ t.row }}">{{ t.row }}</a></td>
   <td class="nowrap"><a href="/tickets/{{ t.ticket }}" target="_blank" rel="noopener" title="Opens the Zoho conversation in a new tab">#{{ t.ticket }} ↗</a></td>
   <td>{{ t.owner }}</td>
@@ -130,7 +132,7 @@
   <td>{{ t.zoho_status }}</td>
 </tr>
 {% else %}
-<tr><td colspan="{{ headers | length + 2 }}" class="mute">Nothing here.</td></tr>
+<tr><td colspan="{{ headers | length + (2 if is_superuser else 1) }}" class="mute">Nothing here.</td></tr>
 {% endfor %}
 </tbody>
 </table>
