@@ -469,12 +469,23 @@ def refund_delete(row: int, u: User = Depends(require_superuser)):
 # Ticket replies
 # ---------------------------------------------------------------------------
 
-def _filtered_tickets(request: Request) -> tuple[list, str, str]:
-    """Same view/search filtering replies_list applies, factored out so the
-    CSV export ("download all filtered") sees exactly the rows the list page
-    would show, not the unfiltered table."""
+ALL_OWNERS = "__all__"
+DEFAULT_TICKET_OWNERS = ["Community Team"]
+
+
+def _filtered_tickets(request: Request) -> tuple[list, str, str, list[str]]:
+    """Same view/search/owner filtering replies_list applies, factored out so
+    the CSV export ("download all filtered") sees exactly the rows the list
+    page would show, not the unfiltered table.
+
+    Owner defaults to "Community Team" only (21 Sep 2026: a lot of rows sit
+    with an individual agent's name, or "Unassigned (...)", once claimed —
+    those aren't what the team works from day to day) when ?owner isn't in
+    the URL at all; passing ?owner=__all__ (the multi-select's own "All
+    owners" option) is how a click asks for every owner instead."""
     view = request.query_params.get("view", "pending")
     q = request.query_params.get("q", "").strip().lower()
+    owners = request.query_params.getlist("owner") or list(DEFAULT_TICKET_OWNERS)
     rows = load_tickets()
     if view == "pending":
         rows = [t for t in rows if t.pending]
@@ -482,16 +493,28 @@ def _filtered_tickets(request: Request) -> tuple[list, str, str]:
         rows = [t for t in rows if not t.sent]
     elif view == "sent":
         rows = [t for t in rows if t.sent]
+    if ALL_OWNERS not in owners:
+        owner_set = set(owners)
+        rows = [t for t in rows if t.owner in owner_set]
     if q:
         rows = [t for t in rows if q in (t.ticket + " " + t.name + " " + t.email + " " + t.course + " " + t.requirement).lower()]
     rows.reverse()
-    return rows, view, q
+    return rows, view, q, owners
+
+
+def _owners_qs(owners: list[str]) -> str:
+    return "".join(f"&owner={quote(o)}" for o in owners)
 
 
 @app.get("/replies", response_class=HTMLResponse)
 def replies_list(request: Request, u: User = Depends(require_user)):
-    rows, view, q = _filtered_tickets(request)
-    return render(request, "replies.html", view=view, q=q, headers=MAIN_HEADERS,
+    rows, view, q, owners = _filtered_tickets(request)
+    with get_conn() as c:
+        owner_rows = c.execute(
+            "SELECT owner, COUNT(*) AS n FROM tickets WHERE owner != '' "
+            "GROUP BY owner ORDER BY n DESC").fetchall()
+    return render(request, "replies.html", view=view, q=q, owners=owners,
+                  owners_qs=_owners_qs(owners), all_owners=owner_rows, headers=MAIN_HEADERS,
                   trigger_options=TRIGGER_FALLBACK, status_options=STATUS_FALLBACK,
                   **paginate(request, rows))
 
@@ -499,8 +522,8 @@ def replies_list(request: Request, u: User = Depends(require_user)):
 @app.get("/replies/export.csv")
 def replies_export(request: Request, u: User = Depends(require_user)):
     """?scope=page exports just the current page (same slice paginate() would
-    show); anything else exports every row matching the current view/search."""
-    rows, view, _ = _filtered_tickets(request)
+    show); anything else exports every row matching the current view/search/owner."""
+    rows, view, _, _ = _filtered_tickets(request)
     if request.query_params.get("scope") == "page":
         rows = paginate(request, rows)["rows"]
     stamp = datetime.now(settings.tz).strftime("%Y%m%d-%H%M")

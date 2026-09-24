@@ -1,16 +1,17 @@
 {% extends "base.html" %}
 {% block title %}Ticket replies · Community Ops{% endblock %}
 {% block body %}
-{% set base = "/replies?view=" ~ view ~ "&q=" ~ (q | urlencode) %}
+{% set base = "/replies?view=" ~ view ~ "&q=" ~ (q | urlencode) ~ owners_qs %}
 {% set here = base ~ "&page=" ~ page %}
 <h1>Ticket replies <span class="mute small">— "From 27th May 26 onward", row {{ settings.main_first_row }} down</span></h1>
 <div class="tabs">
-  <a href="/replies?view=pending&q={{ q | urlencode }}" class="{{ 'on' if view == 'pending' }}">Marked Yes, not sent</a>
-  <a href="/replies?view=unsent&q={{ q | urlencode }}" class="{{ 'on' if view == 'unsent' }}">All not sent</a>
-  <a href="/replies?view=sent&q={{ q | urlencode }}" class="{{ 'on' if view == 'sent' }}">Sent</a>
-  <a href="/replies?view=all&q={{ q | urlencode }}" class="{{ 'on' if view == 'all' }}">All</a>
+  <a href="/replies?view=pending&q={{ q | urlencode }}{{ owners_qs }}" class="{{ 'on' if view == 'pending' }}">Marked Yes, not sent</a>
+  <a href="/replies?view=unsent&q={{ q | urlencode }}{{ owners_qs }}" class="{{ 'on' if view == 'unsent' }}">All not sent</a>
+  <a href="/replies?view=sent&q={{ q | urlencode }}{{ owners_qs }}" class="{{ 'on' if view == 'sent' }}">Sent</a>
+  <a href="/replies?view=all&q={{ q | urlencode }}{{ owners_qs }}" class="{{ 'on' if view == 'all' }}">All</a>
   <form method="get" action="/replies" style="display:inline-block">
     <input type="hidden" name="view" value="{{ view }}">
+    {% for o in owners %}<input type="hidden" name="owner" value="{{ o }}">{% endfor %}
     <input name="q" value="{{ q }}" placeholder="ticket #, name, email, course, query" class="search">
   </form>
   {% if can_edit %}
@@ -21,10 +22,23 @@
   {% endif %}
   {% if is_superuser %}<a href="/replies/new">+ Add test entry</a>{% endif %}
 </div>
+<form method="get" action="/replies" class="actions">
+  <input type="hidden" name="view" value="{{ view }}">
+  <input type="hidden" name="q" value="{{ q }}">
+  <label class="small mute" for="owner-filter">Ticket owner</label>
+  <select id="owner-filter" name="owner" multiple size="5" style="min-width:220px">
+    <option value="__all__" {{ 'selected' if '__all__' in owners }}>All owners</option>
+    {% for o in all_owners %}
+    <option value="{{ o['owner'] }}" {{ 'selected' if '__all__' not in owners and o['owner'] in owners }}>{{ o['owner'] }} ({{ o['n'] }})</option>
+    {% endfor %}
+  </select>
+  <button type="submit">Filter</button>
+  <span class="small mute">Ctrl/Cmd-click to pick more than one. Defaults to "Community Team" only (tickets still in the shared queue) — pick "All owners" to see everything, including ones already claimed by an agent.</span>
+</form>
 <p class="small mute">Every column of the sheet is shown; click a row number or name to edit K/L/M and send; the ticket number opens the Zoho conversation in a new tab.
   Choosing <b>Yes</b> in the Trigger column sends immediately, exactly as in the sheet.</p>
 <div class="actions">
-  <a class="btn" href="/replies/export.csv?view={{ view }}&amp;q={{ q | urlencode }}">⬇ Download all ({{ total }}) · CSV</a>
+  <a class="btn" href="/replies/export.csv?view={{ view }}&amp;q={{ q | urlencode }}{{ owners_qs }}">⬇ Download all ({{ total }}) · CSV</a>
 </div>
 {% include "_pager.html" %}
 {% include "_scrollsync.html" %}
