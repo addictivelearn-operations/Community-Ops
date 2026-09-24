@@ -22,18 +22,22 @@
   {% endif %}
   {% if is_superuser %}<a href="/replies/new">+ Add test entry</a>{% endif %}
 </div>
-<form method="get" action="/replies" class="actions">
+{% set owner_summary = 'All owners' if '__all__' in owners else (owners | join(', ') if owners | length <= 2 else owners | length ~ ' owners') %}
+<form method="get" action="/replies" class="actions owner-dropdown" id="owner-form">
   <input type="hidden" name="view" value="{{ view }}">
   <input type="hidden" name="q" value="{{ q }}">
-  <label class="small mute" for="owner-filter">Ticket owner</label>
-  <select id="owner-filter" name="owner" multiple size="5" style="min-width:220px">
-    <option value="__all__" {{ 'selected' if '__all__' in owners }}>All owners</option>
+  <button type="button" class="btn" id="owner-toggle">Ticket owner: {{ owner_summary }} ▾</button>
+  <span class="small mute">Defaults to "Community Team" only (tickets still in the shared queue).</span>
+  <div class="owner-panel" id="owner-panel" hidden>
+    <label><input type="checkbox" name="owner" value="__all__" class="owner-all" {{ 'checked' if '__all__' in owners }}> All owners</label>
+    <hr>
     {% for o in all_owners %}
-    <option value="{{ o['owner'] }}" {{ 'selected' if '__all__' not in owners and o['owner'] in owners }}>{{ o['owner'] }} ({{ o['n'] }})</option>
+    <label><input type="checkbox" name="owner" value="{{ o['owner'] }}" class="owner-one" {{ 'checked' if '__all__' not in owners and o['owner'] in owners }}> {{ o['owner'] }} ({{ o['n'] }})</label>
     {% endfor %}
-  </select>
-  <button type="submit">Filter</button>
-  <span class="small mute">Ctrl/Cmd-click to pick more than one. Defaults to "Community Team" only (tickets still in the shared queue) — pick "All owners" to see everything, including ones already claimed by an agent.</span>
+    <div class="owner-panel-actions">
+      <button type="submit">Apply</button>
+    </div>
+  </div>
 </form>
 <p class="small mute">Every column of the sheet is shown; click a row number or name to edit K/L/M and send; the ticket number opens the Zoho conversation in a new tab.
   Choosing <b>Yes</b> in the Trigger column sends immediately, exactly as in the sheet.</p>
@@ -109,6 +113,33 @@
 </form>
 {% set base = here %}{% include "_pager.html" %}
 <script>
+// Ticket-owner dropdown: collapsed by default, "All owners" and a specific
+// owner are mutually exclusive (checking one clears the other side).
+(function () {
+  var toggle = document.getElementById('owner-toggle');
+  var panel = document.getElementById('owner-panel');
+  var form = document.getElementById('owner-form');
+  if (!toggle || !panel || !form) return;
+  toggle.addEventListener('click', function (e) {
+    e.stopPropagation();
+    panel.hidden = !panel.hidden;
+  });
+  document.addEventListener('click', function (e) {
+    if (!panel.hidden && !form.contains(e.target)) panel.hidden = true;
+  });
+  var allBox = form.querySelector('.owner-all');
+  var oneBoxes = function () { return form.querySelectorAll('.owner-one'); };
+  if (allBox) {
+    allBox.addEventListener('change', function () {
+      if (allBox.checked) oneBoxes().forEach(function (b) { b.checked = false; });
+    });
+  }
+  oneBoxes().forEach(function (b) {
+    b.addEventListener('change', function () {
+      if (b.checked && allBox) allBox.checked = false;
+    });
+  });
+})();
 // Bulk checkbox toolbar: select-all, live count, guard against an empty selection.
 (function () {
   var checkAll = document.getElementById('check-all');
