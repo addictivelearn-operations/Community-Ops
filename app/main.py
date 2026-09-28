@@ -776,7 +776,9 @@ def admin_resync_replies(u: User = Depends(require_editor)):
 
 @app.post("/admin/sync/tickets")
 def admin_sync_tickets(back_to: str = Form("/diagnostics"), u: User = Depends(require_editor)):
-    result = zoho_sync.run()
+    """Incremental sync + reassignment sweep in one click (28 Sep 2026) --
+    see zoho_sync.run_full_sync()."""
+    result = zoho_sync.run_full_sync()
     return back(back_to if back_to.startswith("/") else "/diagnostics", f"Ticket sync: {result}",
                "failed" not in result or not result.get("failed"))
 

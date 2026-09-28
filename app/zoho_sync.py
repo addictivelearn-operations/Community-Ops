@@ -562,6 +562,32 @@ def run_reassignment_sweep() -> dict:
         _lock.release()
 
 
+def run_full_sync() -> dict:
+    """run() (incremental, createdTime-windowed — catches brand-new tickets)
+    immediately followed by run_reassignment_sweep() (full assignee scan —
+    catches a ticket reassigned into Community Team from another
+    department), merged into one result (28 Sep 2026). One click now does
+    what used to need two separate buttons, so editors on Ticket replies
+    can self-serve a fresh pull any time instead of only getting new
+    tickets at the 3x/day sync + once-daily sweep schedule. Each half still
+    acquires and releases _lock on its own, so this never holds it for both
+    at once -- if one half reports "skipped" (another sync already running
+    elsewhere), that's surfaced but the other half still runs."""
+    sync_result = run()
+    sweep_result = run_reassignment_sweep()
+    combined = {
+        "imported": sync_result.get("imported", 0) + sweep_result.get("imported", 0),
+        "failed": sync_result.get("failed", 0) + sweep_result.get("failed", 0),
+        "deferred": sync_result.get("deferred", 0) + sweep_result.get("deferred", 0),
+        "extraction_backfilled": (sync_result.get("extraction_backfilled", 0)
+                                  + sweep_result.get("extraction_backfilled", 0)),
+    }
+    skipped = sync_result.get("skipped") or sweep_result.get("skipped")
+    if skipped:
+        combined["skipped"] = skipped
+    return combined
+
+
 # ---------------------------------------------------------------------------
 # Status/owner refresh (port of refreshRecentTicketStatuses)
 # ---------------------------------------------------------------------------

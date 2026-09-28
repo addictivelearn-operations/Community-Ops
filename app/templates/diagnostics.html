@@ -46,11 +46,11 @@
 <div class="card" style="display:flex; flex-direction:column; gap:10px;">
   <form method="post" action="/admin/sync/tickets" class="actions">
     <button>Run ticket sync now</button>
-    <span class="small mute">Pulls new Community Team tickets from Zoho, extracts learner details, inserts into the database. Also runs on the schedule (see HANDOVER.txt / README §3a).</span>
+    <span class="small mute">Pulls new Community Team tickets from Zoho and extracts learner details (also runs 3x/day), then immediately runs the reassignment sweep below (also runs daily at 04:00) — one click covers both a brand-new ticket and one reassigned in from another department.</span>
   </form>
   <form method="post" action="/admin/sync/tickets/reassigned" class="actions">
     <button>Run reassignment sweep now</button>
-    <span class="small mute">Full scan of everything Zoho currently has assigned to Community Team, by agent — catches a ticket reassigned in from another department, which the regular ticket sync can't (createdTime doesn't change on reassignment). Also runs daily at 04:00; a full scan costs more API calls than the windowed sync, so it isn't on the main 3x/day schedule.</span>
+    <span class="small mute">Full scan of everything Zoho currently has assigned to Community Team, by agent — catches a ticket reassigned in from another department, which the regular ticket sync can't (createdTime doesn't change on reassignment). "Run ticket sync now" above already includes this; use this on its own only to isolate which half of a sync is having trouble.</span>
   </form>
   <form method="post" action="/admin/sync/tickets/backfill-extraction" class="actions">
     <button>Run extraction backfill now</button>
