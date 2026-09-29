@@ -624,6 +624,37 @@ def replies_bulk_delete(ids: list[int] = Form([]), u: User = Depends(require_sup
     return back("/replies", f"Deleted {n} row(s).", True)
 
 
+@app.post("/replies/bulk-unassign")
+def replies_bulk_unassign(ids: list[int] = Form([]), u: User = Depends(require_editor)):
+    """Sends each selected ticket back to its department's unassigned pool
+    in Zoho (29 Sep 2026, for a ticket that landed on Community Team but
+    isn't actually theirs) -- same department, same Zoho status, only the
+    assignee changes. The row itself is never deleted here: its Owner is
+    just updated to match, so it naturally drops out of the default
+    "Ticket owner: Community Team" filter on its own, but stays visible
+    (and auditable) under "All owners". Zoho status keeps getting refreshed
+    for it same as any other ticket -- nothing special needed for that."""
+    if not ids:
+        return back("/replies", "No rows selected to unassign.", False)
+    unassigned = 0
+    failed = 0
+    for row_id in ids:
+        t = load_ticket(row_id)
+        if not t or not t.ticket_id:
+            failed += 1
+            continue
+        try:
+            zoho.unassign_ticket(t.ticket_id)
+            with get_conn() as c:
+                c.execute("UPDATE tickets SET owner=? WHERE id=?",
+                         (f"Unassigned ({t.brand})" if t.brand else "Unassigned", row_id))
+            unassigned += 1
+        except Exception:  # noqa: BLE001 — one bad ticket must not stop the batch
+            failed += 1
+    return back("/replies", f"Unassigned {unassigned} ticket(s)." + (f" {failed} failed." if failed else ""),
+               failed == 0)
+
+
 @app.post("/replies/{row}/cell")
 def reply_cell(row: int, field: str = Form(...), value: str = Form(""), u: User = Depends(require_editor)):
     """Inline edit from the list: one field (resolution, status, …), saved

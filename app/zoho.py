@@ -138,6 +138,15 @@ def close_ticket(ticket_id: str, unassign: bool = False) -> dict | None:
     return write("PATCH", f"/tickets/{ticket_id}", payload)
 
 
+def unassign_ticket(ticket_id: str) -> dict | None:
+    """Sends the ticket back to its department's unassigned pool — same
+    department, same status, only assigneeId changes. Same PATCH shape
+    close_ticket(unassign=True) uses, without the status change (29 Sep
+    2026: for a ticket that landed on Community Team but isn't actually
+    theirs)."""
+    return write("PATCH", f"/tickets/{ticket_id}", {"assigneeId": None})
+
+
 def create_ticket(*, subject: str, department_id: str, name: str, email: str,
                   phone: str | None) -> dict:
     parts = name.split()
