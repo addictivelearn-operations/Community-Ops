@@ -70,6 +70,12 @@
     <button>Resync un-sent refunds from Refund_Clean</button>
     <span class="small mute">For when Refund_Clean itself had bad data (e.g. the course name landing in Reason) that's since been fixed at the source, but already synced into a not-yet-sent row here. Never touches a row once its learner has been emailed.</span>
   </form>
+  {% if is_superuser %}
+  <div class="actions">
+    <a class="btn" href="/refunds?view=stale">Not in Refund_Clean →</a>
+    <span class="small mute">Not-yet-emailed rows in the app with no matching Source Key in Refund_Clean any more — e.g. left over from an earlier column-misalignment bug. Opens the Refunds page filtered to just those, where you can review, download, and delete them (select all + "Delete selected"). A row once emailed is never included here, no matter what.</span>
+  </div>
+  {% endif %}
   <form method="post" action="/admin/sync/course-master" class="actions">
     <button>Refresh course master now</button>
     <span class="small mute">Re-reads the external Course Master sheet into the local mirror used for course-name lookups.</span>
