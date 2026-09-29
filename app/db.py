@@ -116,6 +116,22 @@ CREATE TABLE IF NOT EXISTS sync_log (
     ms            INTEGER NOT NULL DEFAULT 0,
     error         TEXT NOT NULL DEFAULT ''
 );
+
+-- Who did what (29 Sep 2026) -- everything sync_log/sent_by don't already
+-- cover: deletes, unassigns, CSV exports, force-sends, clearing the sync
+-- error log. sent_by on tickets/refunds already attributes a normal send,
+-- so this exists for actions that leave no other trace, especially ones
+-- that destroy data (delete) or can't be undone (a force-send bypassing
+-- the never-twice guard).
+CREATE TABLE IF NOT EXISTS audit_log (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    at      TEXT NOT NULL DEFAULT '',  -- ISO
+    actor   TEXT NOT NULL DEFAULT '',  -- signed-in user's email
+    action  TEXT NOT NULL DEFAULT '',  -- short code, e.g. "ticket_delete"
+    target  TEXT NOT NULL DEFAULT '',  -- what it acted on
+    detail  TEXT NOT NULL DEFAULT ''   -- free text -- e.g. the row's own data, for a delete
+);
+CREATE INDEX IF NOT EXISTS idx_audit_log_at ON audit_log(at DESC);
 """
 
 

@@ -27,6 +27,21 @@
 </details>
 {% endif %}
 
+{% if activity_log %}
+<details class="card">
+  <summary style="cursor:pointer; font-weight:bold;">Activity log ({{ activity_log|length }})</summary>
+  <p class="small mute">Last {{ activity_log|length }} logged action(s) — who deleted, unassigned, exported, or force-sent something, and when. Routine inline edits and normal (non-forced) sends aren't logged here; those already carry their own "sent by" on the row.</p>
+  <table class="grid">
+    <thead><tr><th>When</th><th>Who</th><th>Action</th><th>Target</th><th>Detail</th></tr></thead>
+    <tbody>
+    {% for e in activity_log %}
+    <tr><td class="nowrap">{{ e['at'] }}</td><td>{{ e['actor'] }}</td><td>{{ e['action'] }}</td><td>{{ e['target'] }}</td><td class="wrap">{{ e['detail'] }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</details>
+{% endif %}
+
 {% if can_edit %}
 <h2>Data migration</h2>
 <div class="card">

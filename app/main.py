@@ -167,6 +167,14 @@ def back(url: str, msg: str, ok: bool) -> RedirectResponse:
     return RedirectResponse(f"{url}{sep}{urlencode({'msg': msg, 'ok': '1' if ok else '0'})}", status_code=303)
 
 
+def log_action(u: User, action: str, target: str, detail: str = "") -> None:
+    """Records who did what, for the actions that leave no other trace --
+    see audit_log's own comment in db.py for which ones and why."""
+    with get_conn() as c:
+        c.execute("INSERT INTO audit_log (at, actor, action, target, detail) VALUES (?,?,?,?,?)",
+                 (datetime.now(settings.tz).isoformat(), u.email, action, target, detail))
+
+
 def csv_response(header: list[str], rows: list[list], filename: str) -> Response:
     buf = io.StringIO()
     w = csv.writer(buf)
@@ -337,6 +345,7 @@ def refunds_export(request: Request, u: User = Depends(require_superuser)):
     if request.query_params.get("scope") == "page":
         rows = paginate(request, rows)["rows"]
     stamp = datetime.now(settings.tz).strftime("%Y%m%d-%H%M")
+    log_action(u, "refunds_export", f"view={view}", f"{len(rows)} row(s)")
     return csv_response(REFUND_CSV_HEADER, [refund_csv_row(r) for r in rows], f"refunds-{view}-{stamp}.csv")
 
 
@@ -347,6 +356,7 @@ def refunds_export_selected(ids: list[int] = Form([]), u: User = Depends(require
     id_set = set(ids)
     rows = [r for r in load_refunds() if r.row in id_set]
     stamp = datetime.now(settings.tz).strftime("%Y%m%d-%H%M")
+    log_action(u, "refunds_export_selected", f"{len(rows)} row(s)", ", ".join(str(r.row) for r in rows))
     return csv_response(REFUND_CSV_HEADER, [refund_csv_row(r) for r in rows], f"refunds-selected-{stamp}.csv")
 
 
@@ -354,7 +364,12 @@ def refunds_export_selected(ids: list[int] = Form([]), u: User = Depends(require
 def refunds_bulk_delete(ids: list[int] = Form([]), u: User = Depends(require_superuser)):
     if not ids:
         return back("/refunds", "No rows selected to delete.", False)
-    n = sum(1 for i in ids if delete_refund(i))
+    n = 0
+    for i in ids:
+        r = load_refund(i)
+        if r and delete_refund(i):
+            log_action(u, "refund_delete", f"row {i}", f"{r.name} <{r.email}> {r.community} {r.amount}")
+            n += 1
     return back("/refunds", f"Deleted {n} row(s).", True)
 
 
@@ -471,6 +486,7 @@ def refund_handoff_force(row: int, u: User = Depends(require_superuser)):
     if not r.sent:
         return back(f"/refunds/{row}", "The learner has not been emailed yet — approve first.", False)
     out = refunds.handoff_and_record(g, r, u.display, u.email, force=True)
+    log_action(u, "refund_handoff_force", f"row {row}", f"{r.name} <{r.email}> — {out.message}")
     return back(f"/refunds/{row}", "Team (forced): " + out.message, out.ok)
 
 
@@ -482,7 +498,10 @@ def refund_resend(row: int, u: User = Depends(require_editor)):
 
 @app.post("/refunds/{row}/delete")
 def refund_delete(row: int, u: User = Depends(require_superuser)):
+    r = load_refund(row)
     ok = delete_refund(row)
+    if ok and r:
+        log_action(u, "refund_delete", f"row {row}", f"{r.name} <{r.email}> {r.community} {r.amount}")
     return back("/refunds", f"Row {row} deleted." if ok else f"Row {row} was already gone.", ok)
 
 
@@ -603,6 +622,7 @@ def replies_export(request: Request, u: User = Depends(require_superuser)):
     if request.query_params.get("scope") == "page":
         rows = paginate(request, rows)["rows"]
     stamp = datetime.now(settings.tz).strftime("%Y%m%d-%H%M")
+    log_action(u, "tickets_export", f"view={ft['view']}", f"{len(rows)} row(s)")
     return csv_response(TICKET_CSV_HEADER, [ticket_csv_row(t) for t in rows], f"tickets-{ft['view']}-{stamp}.csv")
 
 
@@ -613,6 +633,7 @@ def replies_export_selected(ids: list[int] = Form([]), u: User = Depends(require
     id_set = set(ids)
     rows = [t for t in load_tickets() if t.row in id_set]
     stamp = datetime.now(settings.tz).strftime("%Y%m%d-%H%M")
+    log_action(u, "tickets_export_selected", f"{len(rows)} row(s)", ", ".join(str(t.row) for t in rows))
     return csv_response(TICKET_CSV_HEADER, [ticket_csv_row(t) for t in rows], f"tickets-selected-{stamp}.csv")
 
 
@@ -620,7 +641,12 @@ def replies_export_selected(ids: list[int] = Form([]), u: User = Depends(require
 def replies_bulk_delete(ids: list[int] = Form([]), u: User = Depends(require_superuser)):
     if not ids:
         return back("/replies", "No rows selected to delete.", False)
-    n = sum(1 for i in ids if delete_ticket(i))
+    n = 0
+    for i in ids:
+        t = load_ticket(i)
+        if t and delete_ticket(i):
+            log_action(u, "ticket_delete", f"row {i}", f"#{t.ticket} {t.name} <{t.email}>")
+            n += 1
     return back("/replies", f"Deleted {n} row(s).", True)
 
 
@@ -645,9 +671,10 @@ def replies_bulk_unassign(ids: list[int] = Form([]), u: User = Depends(require_e
             continue
         try:
             zoho.unassign_ticket(t.ticket_id)
+            new_owner = f"Unassigned ({t.brand})" if t.brand else "Unassigned"
             with get_conn() as c:
-                c.execute("UPDATE tickets SET owner=? WHERE id=?",
-                         (f"Unassigned ({t.brand})" if t.brand else "Unassigned", row_id))
+                c.execute("UPDATE tickets SET owner=? WHERE id=?", (new_owner, row_id))
+            log_action(u, "ticket_unassign", f"row {row_id} (#{t.ticket})", f"{t.owner} -> {new_owner}")
             unassigned += 1
         except Exception:  # noqa: BLE001 — one bad ticket must not stop the batch
             failed += 1
@@ -732,13 +759,20 @@ def reply_save(row: int, course: str = Form(""), requirement: str = Form(""), re
 
 @app.post("/replies/{row}/send")
 def reply_send(row: int, resend: str = Form(""), u: User = Depends(require_editor)):
-    out = replies.send(row, u.display, allow_resend=resend == "1")
+    forced = resend == "1"
+    out = replies.send(row, u.display, allow_resend=forced)
+    if forced:
+        t = load_ticket(row)
+        log_action(u, "ticket_resend_force", f"row {row}" + (f" (#{t.ticket})" if t else ""), out.message)
     return back(f"/replies/{row}", out.message, out.ok)
 
 
 @app.post("/replies/{row}/delete")
 def reply_delete(row: int, u: User = Depends(require_superuser)):
+    t = load_ticket(row)
     ok = delete_ticket(row)
+    if ok and t:
+        log_action(u, "ticket_delete", f"row {row}", f"#{t.ticket} {t.name} <{t.email}>")
     return back("/replies", f"Row {row} deleted." if ok else f"Row {row} was already gone.", ok)
 
 
@@ -870,6 +904,7 @@ def admin_sync_course_master(u: User = Depends(require_editor)):
 def admin_clear_sync_errors(u: User = Depends(require_superuser)):
     with get_conn() as c:
         n = c.execute("DELETE FROM sync_log WHERE status='ERROR'").rowcount
+    log_action(u, "clear_sync_errors", "sync_log", f"{n} row(s) cleared")
     return back("/diagnostics", f"Cleared {n} sync error log row(s).", True)
 
 
@@ -954,5 +989,9 @@ def diagnostics(request: Request, u: User = Depends(require_superuser)):
         sync_errors = c.execute(
             "SELECT at, ticket, email, ms, error FROM sync_log "
             "WHERE status='ERROR' ORDER BY at DESC LIMIT 20").fetchall()
+        activity_log = c.execute(
+            "SELECT at, actor, action, target, detail FROM audit_log "
+            "ORDER BY at DESC LIMIT 100").fetchall()
     return render(request, "diagnostics.html", checks=checks, missing=settings.missing(),
-                  sync_errors=sync_errors, extraction_pending_count=extraction_pending_count)
+                  sync_errors=sync_errors, extraction_pending_count=extraction_pending_count,
+                  activity_log=activity_log)
