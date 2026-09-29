@@ -98,6 +98,35 @@ def run() -> dict:
     return {"inserted": inserted, "skipped_old": skipped_old}
 
 
+def sheet_keys() -> set[str]:
+    """Every Source Key currently in Refund_Clean, right now — same identity
+    RefundRow.key already uses (timestamp ms + lowercased email). Lets a
+    caller ask "does this database row still have a matching form
+    submission?" — for a row that shouldn't exist any more (24 Sep 2026: an
+    earlier Refund_Clean column-misalignment bug inserted rows that have
+    since been cleaned out of the sheet itself, e.g. a duplicate form
+    submission removed by hand), the key comes back missing here even
+    though the row is still sitting in `refunds`."""
+    g = GoogleClient(settings.sync_service_account_email)
+    values = g.sheet_values(settings.rf_source_sheet_id, settings.rf_source_tab,
+                            f"A2:{col_letter(SOURCE_LAST_COL)}")
+    keys = set()
+    for row in values:
+        ts_raw = row[0] if len(row) > 0 else ""
+        if not ts_raw:
+            continue
+        ts_dt = serial_to_dt(ts_raw)
+        if ts_dt is None:
+            try:
+                ts_dt = datetime.fromisoformat(str(ts_raw)).replace(tzinfo=settings.tz)
+            except ValueError:
+                continue
+        email = cell(row, 3)
+        ts_ms = int(ts_dt.timestamp() * 1000)
+        keys.add(_row_key(ts_ms, ts_dt.isoformat(), email))
+    return keys
+
+
 def resync_unsent() -> dict:
     """Re-pulls every column A-J from Refund_Clean for a row already in the
     database that has NOT been emailed yet (Kawal, 23 Sep 2026: a Refund_Clean

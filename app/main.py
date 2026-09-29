@@ -290,17 +290,29 @@ def dashboard(request: Request, u: User = Depends(require_superuser)):
 # Refunds
 # ---------------------------------------------------------------------------
 
-def _filtered_refunds(request: Request) -> tuple[list, str, str]:
+def _filtered_refunds(request: Request, is_superuser: bool = False) -> tuple[list, str, str]:
     """Same view/search filtering refunds_list applies, factored out so the
     CSV export ("download all filtered") sees exactly the rows the list page
-    would show, not the unfiltered table."""
+    would show, not the unfiltered table.
+
+    view=stale (superuser only, 29 Sep 2026): every NOT-YET-EMAILED row whose
+    Source Key no longer has a matching row in Refund_Clean — the cleanup
+    view for rows an earlier column-misalignment bug inserted that have
+    since been removed from the sheet itself. Costs a live Sheets API call
+    (refund_intake.sheet_keys()), so it's not exposed to a non-superuser;
+    request it without superuser and it silently falls back to "open"."""
     view = request.query_params.get("view", "open")
+    if view == "stale" and not is_superuser:
+        view = "open"
     q = request.query_params.get("q", "").strip().lower()
     rows = load_refunds()
     if view == "open":
         rows = [r for r in rows if not r.sent]
     elif view == "sent":
         rows = [r for r in rows if r.sent]
+    elif view == "stale":
+        valid_keys = refund_intake.sheet_keys()
+        rows = [r for r in rows if not r.sent and r.key not in valid_keys]
     if q:
         rows = [r for r in rows if q in (r.name + " " + r.email + " " + r.community + " " + r.phone).lower()]
     rows.reverse()
@@ -309,7 +321,7 @@ def _filtered_refunds(request: Request) -> tuple[list, str, str]:
 
 @app.get("/refunds", response_class=HTMLResponse)
 def refunds_list(request: Request, u: User = Depends(require_user)):
-    rows, view, q = _filtered_refunds(request)
+    rows, view, q = _filtered_refunds(request, is_superuser=u.is_superuser)
     return render(request, "refunds.html", view=view, q=q, headers=REFUND_HEADERS,
                   trigger_options=TRIGGER_FALLBACK,
                   **paginate(request, rows))
@@ -321,7 +333,7 @@ def refunds_export(request: Request, u: User = Depends(require_superuser)):
     show); anything else exports every row matching the current view/search.
     Superuser only (24 Sep 2026) -- a bulk export of names/emails/phones is
     more sensitive than viewing the same rows one at a time on screen."""
-    rows, view, _ = _filtered_refunds(request)
+    rows, view, _ = _filtered_refunds(request, is_superuser=u.is_superuser)
     if request.query_params.get("scope") == "page":
         rows = paginate(request, rows)["rows"]
     stamp = datetime.now(settings.tz).strftime("%Y%m%d-%H%M")

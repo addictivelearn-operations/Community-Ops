@@ -8,6 +8,7 @@
   <a href="/refunds?view=open&q={{ q | urlencode }}" class="{{ 'on' if view == 'open' }}">Not yet emailed</a>
   <a href="/refunds?view=sent&q={{ q | urlencode }}" class="{{ 'on' if view == 'sent' }}">Emailed</a>
   <a href="/refunds?view=all&q={{ q | urlencode }}" class="{{ 'on' if view == 'all' }}">All</a>
+  {% if is_superuser %}<a href="/refunds?view=stale&q={{ q | urlencode }}" class="{{ 'on' if view == 'stale' }}" title="Not-yet-emailed rows whose Source Key no longer has a matching row in Refund_Clean">Not in Refund_Clean</a>{% endif %}
   <form method="get" action="/refunds" style="display:inline-block">
     <input type="hidden" name="view" value="{{ view }}">
     <input name="q" value="{{ q }}" placeholder="name, email, community, phone" class="search">
