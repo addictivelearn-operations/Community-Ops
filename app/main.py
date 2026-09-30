@@ -882,6 +882,12 @@ def admin_sync_statuses(u: User = Depends(require_editor)):
     return back("/diagnostics", f"Status refresh: {result}", True)
 
 
+@app.post("/admin/sync/statuses/full-audit")
+def admin_full_status_audit(u: User = Depends(require_editor)):
+    result = zoho_sync.full_status_audit()
+    return back("/diagnostics", f"Full status audit: {result}", True)
+
+
 @app.post("/admin/sync/refunds")
 def admin_sync_refunds(u: User = Depends(require_editor)):
     result = refund_intake.run()

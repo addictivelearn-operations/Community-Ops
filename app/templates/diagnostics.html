@@ -75,6 +75,10 @@
     <button>Refresh ticket statuses/owners now</button>
     <span class="small mute">Re-checks every ticket in the database not already marked Closed, directly by id (capped at {{ settings.status_max_tickets_per_run }} per run, oldest-tracked first). Also runs as part of the 3x/day sync.</span>
   </form>
+  <form method="post" action="/admin/sync/statuses/full-audit" class="actions">
+    <button>Run full status audit (all tickets)</button>
+    <span class="small mute">Re-checks status/owner for EVERY tracked ticket, including ones already marked Closed. Two passes: a cheap department-wide scan first (catches most of what's likely still moving, for almost no API cost), then a capped, per-ticket fallback — rotating across runs — for whatever the scan's own ~5000-per-department reach can't cover. Click a few times to cycle through the full backlog.</span>
+  </form>
   <form method="post" action="/admin/sync/refunds" class="actions"
         onsubmit="return confirm('Run this only AFTER \'Migrate sheet rows into the database\' above has been run at least once. Running it first would insert rows with blank trigger/sent state for refunds that were actually already sent from the sheet, risking a learner being emailed twice. Continue?')">
     <button>Run refund intake now</button>

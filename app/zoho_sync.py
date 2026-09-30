@@ -24,6 +24,7 @@ _lock = threading.Lock()
 
 LAST_SYNC_KEY = "LAST_SYNC_ISO"
 STATUS_SYNC_KEY = "STATUS_LAST_SWEEP_ISO"
+FULL_AUDIT_FALLBACK_CURSOR_KEY = "FULL_AUDIT_FALLBACK_LAST_ID"
 
 
 def _parse_iso(s: str) -> datetime:
@@ -646,3 +647,112 @@ def refresh_statuses(max_tickets: int | None = None) -> dict:
 
     set_state(STATUS_SYNC_KEY, datetime.now(settings.tz).isoformat())
     return {"checked": checked, "changed": changed, "remaining": len(rows) - checked}
+
+
+def full_status_audit() -> dict:
+    """Full pass over EVERY tracked ticket's status/owner, not just the
+    not-yet-Closed ones refresh_statuses() maintains day to day (30 Sep
+    2026, Kawal: wanted a way to check literally everything, cheaply,
+    after the refresh_statuses() bug above went unnoticed for a while).
+
+    Two phases, cheapest first:
+
+    Phase 1 -- paging /tickets/search?departmentId=<id> (zoho.
+    tickets_by_department, one call per settings.allowed_departments --
+    confirmed live it only accepts a single id, not a combined list)
+    costs the SAME weight (3 per 100-ticket page) as the plain ticket
+    list, not the far scarcer pool ticket_full() draws from, and needs no
+    modifiedTime/createdTime field at all, so it can't be thrown off by
+    the class of bug refresh_statuses() had. BUT that endpoint hard-caps
+    `from` at 4999 (confirmed live -- HTTP 422 past it), so it can only
+    ever reach the ~5000 newest tickets per department -- confirmed live
+    this only matches about 1 in 7 of our tracked tickets, since our
+    tracked set spans much further back than that in each department's
+    full history.
+
+    Phase 2 -- for whatever phase 1 didn't reach, one ticket_full() call
+    each (the same per-ticket approach refresh_statuses() uses), rotating
+    through the full tracked set across successive runs via a persistent
+    cursor (FULL_AUDIT_FALLBACK_CURSOR_KEY, by row id, wrapping around)
+    rather than always re-checking the same head of the list -- capped
+    per run since this draws from that scarcer pool. A ticket phase 1
+    already confirmed fresh in the SAME run is skipped here, so nothing
+    gets checked twice in one pass."""
+    with get_conn() as c:
+        existing = {r["ticket"]: (r["id"], r["owner"], r["zoho_status"])
+                   for r in c.execute("SELECT id, ticket, owner, zoho_status FROM tickets").fetchall()}
+
+    dept_ids = zoho.department_ids(settings.allowed_departments)
+    pages = 0
+    matched: set[str] = set()
+    changed = 0
+    started = time.time()
+
+    for did in dept_ids:
+        for page in range(settings.full_audit_max_pages_per_department):
+            if time.time() - started > 270:
+                break
+            try:
+                tickets = zoho.tickets_by_department(did, from_=page * 100, limit=100)
+            except zoho.ZohoError:
+                break  # most likely /tickets/search's from<=4999 ceiling -- nothing more to do here
+            pages += 1
+            if not tickets:
+                break
+            with get_conn() as c:
+                for t in tickets:
+                    number = str(t["ticketNumber"])
+                    hit = existing.get(number)
+                    if not hit:
+                        continue
+                    matched.add(number)
+                    row_id, old_owner, old_status = hit
+                    owner = zoho.owner_label(t)
+                    status = t.get("status", "")
+                    if owner != old_owner or status != old_status:
+                        c.execute("UPDATE tickets SET owner=?, zoho_status=? WHERE id=?",
+                                 (owner, status, row_id))
+                        changed += 1
+            if len(tickets) < 100:
+                break
+        if time.time() - started > 270:
+            break
+
+    # Phase 2: per-ticket fallback for whatever the scan couldn't reach,
+    # rotating through every tracked ticket across runs.
+    last_id = int(get_state(FULL_AUDIT_FALLBACK_CURSOR_KEY, "0") or "0")
+    with get_conn() as c:
+        candidates = c.execute(
+            "SELECT id, ticket, ticket_id, owner, zoho_status FROM tickets "
+            "WHERE id > ? AND ticket_id != '' ORDER BY id LIMIT ?",
+            (last_id, settings.full_audit_fallback_max_per_run)).fetchall()
+        if len(candidates) < settings.full_audit_fallback_max_per_run:
+            wrapped = c.execute(
+                "SELECT id, ticket, ticket_id, owner, zoho_status FROM tickets "
+                "WHERE id <= ? AND ticket_id != '' ORDER BY id LIMIT ?",
+                (last_id, settings.full_audit_fallback_max_per_run - len(candidates))).fetchall()
+            candidates = list(candidates) + list(wrapped)
+
+    fallback_checked = 0
+    last_seen_id = last_id
+    for row in candidates:
+        last_seen_id = row["id"]
+        if row["ticket"] in matched:
+            continue  # phase 1 already confirmed this one fresh, this same run
+        if time.time() - started > 270:
+            break
+        t = zoho.ticket_full(row["ticket_id"])
+        fallback_checked += 1
+        if not t:
+            continue
+        owner = zoho.owner_label(t)
+        status = t.get("status", "")
+        if owner != row["owner"] or status != row["zoho_status"]:
+            with get_conn() as c:
+                c.execute("UPDATE tickets SET owner=?, zoho_status=? WHERE id=?",
+                         (owner, status, row["id"]))
+            changed += 1
+    set_state(FULL_AUDIT_FALLBACK_CURSOR_KEY, str(last_seen_id))
+
+    return {"pages": pages, "tracked": len(existing), "matched_by_scan": len(matched),
+           "fallback_checked": fallback_checked, "changed": changed}

@@ -229,6 +229,41 @@ def tickets_by_assignee(assignee_id: str, from_: int, limit: int = 100) -> list[
     return body.get("data", [])
 
 
+def department_ids(names: list[str]) -> list[str]:
+    """Resolves department NAMES (settings.allowed_departments) to Zoho's
+    own department ids, by display name out of department_map() -- same
+    pattern as team_agent_id()."""
+    allowed_lc = [n.strip().lower() for n in names]
+    return [did for did, name in department_map().items() if name.strip().lower() in allowed_lc]
+
+
+def tickets_by_department(department_id: str, from_: int, limit: int = 100) -> list[dict]:
+    """One page of /tickets/search filtered to a single department (30 Sep
+    2026) -- confirmed live: departmentId is accepted and correctly
+    filters, at the SAME weight (3 per 100-ticket page) as the plain
+    ticket list, not the much costlier per-ticket ticket_full() call.
+    Confirmed it only accepts ONE id per call -- a comma-separated list
+    422s ("datatype... does not match... 'long'") -- so a multi-department
+    scan needs one paged call per department, not one combined call. Used
+    for a full status/owner audit across every tracked ticket, not just
+    the not-yet-Closed ones the day-to-day refresh checks.
+
+    No `include` param -- confirmed live, /tickets/search (unlike the
+    plain /tickets LIST endpoint) 422s on an unrecognised query param
+    rather than ignoring it. owner_label() still works fine without the
+    embedded assignee object: it falls back to agent_map() by assigneeId,
+    which IS present on a search result.
+
+    Explicit sortBy=-createdTime (confirmed accepted here, unlike include)
+    -- this endpoint also hard-caps `from` at 4999, so whichever ~5000
+    tickets per department land in the reachable window matters; newest
+    first means that window is the tickets most likely to actually still
+    be moving, not an arbitrary slice of a department's full history."""
+    body = get(f"/tickets/search?departmentId={department_id}&limit={limit}&from={from_}"
+              "&sortBy=-createdTime") or {}
+    return body.get("data", [])
+
+
 def owner_label(t: dict) -> str:
     """Column B — port of ownerLabel_/agentDisplayName_. An assigned ticket
     gives the owner's name alone; only an unassigned one is qualified by

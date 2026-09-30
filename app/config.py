@@ -279,6 +279,20 @@ class Settings:
     # ones.
     status_max_tickets_per_run: int = _int("STATUS_MAX_TICKETS_PER_RUN", 300)
 
+    # Full status/owner audit (30 Sep 2026) -- pages department-scoped
+    # /tickets/search instead of a per-ticket call. Capped at 50 (from=4900,
+    # the last page before Zoho's confirmed-live from<=4999 ceiling on that
+    # endpoint) -- going higher is pointless, the call would just 422.
+    full_audit_max_pages_per_department: int = _int("FULL_AUDIT_MAX_PAGES_PER_DEPARTMENT", 50)
+
+    # Phase 2 of the audit -- one ticket_full() call each, for whatever the
+    # cheap department scan above can't reach (confirmed live, 30 Sep 2026:
+    # only ~1 in 7 of our tracked tickets fall within that scan's reachable
+    # window). Draws from a far scarcer Zoho quota pool than the scan does,
+    # so capped and rotated across runs (FULL_AUDIT_FALLBACK_CURSOR_KEY)
+    # rather than done all at once.
+    full_audit_fallback_max_per_run: int = _int("FULL_AUDIT_FALLBACK_MAX_PER_RUN", 200)
+
     # --- Learner / AI caches ---------------------------------------------------
     learner_cache_ttl_days: int = _int("LEARNER_CACHE_TTL_DAYS", 90)
     ai_cache_ttl_days: int = _int("AI_CACHE_TTL_DAYS", 30)
