@@ -271,9 +271,13 @@ class Settings:
         "SCHEDULE_TIMES", [[10, 15], [15, 0], [18, 0]]))
 
     # --- Status refresh -------------------------------------------------------
-    status_overlap_minutes: int = _int("STATUS_OVERLAP_MINUTES", 15)
-    status_max_list_pages: int = _int("STATUS_MAX_LIST_PAGES", 20)
-    status_first_run_lookback_hours: int = _int("STATUS_FIRST_RUN_LOOKBACK_HOURS", 24)
+    # Ticket-by-ticket poll of everything not already Closed (30 Sep 2026 --
+    # see zoho_sync.refresh_statuses()'s own docstring for why this replaced
+    # a LIST-endpoint scan). One Zoho API call per ticket, so this caps how
+    # many a single run checks; oldest-tracked first, so a cap still makes
+    # full progress within a few runs instead of always stalling on the same
+    # ones.
+    status_max_tickets_per_run: int = _int("STATUS_MAX_TICKETS_PER_RUN", 300)
 
     # --- Learner / AI caches ---------------------------------------------------
     learner_cache_ttl_days: int = _int("LEARNER_CACHE_TTL_DAYS", 90)

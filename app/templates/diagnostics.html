@@ -73,7 +73,7 @@
   </form>
   <form method="post" action="/admin/sync/statuses" class="actions">
     <button>Refresh ticket statuses/owners now</button>
-    <span class="small mute">Updates status and owner for recently-modified tickets already in the database.</span>
+    <span class="small mute">Re-checks every ticket in the database not already marked Closed, directly by id (capped at {{ settings.status_max_tickets_per_run }} per run, oldest-tracked first). Also runs as part of the 3x/day sync.</span>
   </form>
   <form method="post" action="/admin/sync/refunds" class="actions"
         onsubmit="return confirm('Run this only AFTER \'Migrate sheet rows into the database\' above has been run at least once. Running it first would insert rows with blank trigger/sent state for refunds that were actually already sent from the sheet, risking a learner being emailed twice. Continue?')">

@@ -592,49 +592,57 @@ def run_full_sync() -> dict:
 # Status/owner refresh (port of refreshRecentTicketStatuses)
 # ---------------------------------------------------------------------------
 
-def refresh_statuses() -> dict:
-    last_sweep = get_state(STATUS_SYNC_KEY, "")
-    if last_sweep:
-        cutoff = _parse_iso(last_sweep) - timedelta(minutes=settings.status_overlap_minutes)
-    else:
-        cutoff = datetime.now(settings.tz) - timedelta(hours=settings.status_first_run_lookback_hours)
+def refresh_statuses(max_tickets: int | None = None) -> dict:
+    """Re-checks status/owner directly, ticket by ticket, for everything we
+    don't already show as Closed -- replaces the old "page Zoho's ticket
+    LIST sorted by -modifiedTime, stop once something looks older than the
+    cutoff" approach (30 Sep 2026, found live: ticket #952397 sat showing
+    Open in the app for a full day after Zoho showed it Closed).
 
+    The old approach's fatal flaw: the LIST endpoint (/tickets, any sort)
+    reliably returns modifiedTime as null for every ticket in this org --
+    confirmed by paging it directly and finding #952397 itself on page 8
+    with modifiedTime: None, despite ticket_full() (the single-ticket
+    DETAIL endpoint) correctly showing its real modifiedTime. The old code
+    fell back to createdTime whenever modifiedTime was missing, so a
+    ticket created days ago but closed minutes ago (exactly #952397 --
+    created 29 Sep, closed 30 Sep) looked "old" by that fallback and could
+    cut the WHOLE scan short on page 1, however many pages later the truly
+    recent tickets sat.
+
+    Sidesteps that class of bug entirely: we already know exactly which
+    tickets we still show as open, so just ask Zoho about each of them by
+    id (ticket_full(), which does return a working modifiedTime -- though
+    nothing here even needs it). Costs one API call per open ticket
+    instead of a handful of LIST pages, capped per run since that's still
+    a real Zoho API cost, oldest-tracked ticket first so a cap here still
+    makes full progress across a few runs rather than repeatedly stalling
+    on the same head of the list."""
     with get_conn() as c:
-        by_number = {r["ticket"]: r["id"] for r in c.execute("SELECT id, ticket FROM tickets").fetchall()}
+        rows = c.execute(
+            "SELECT id, ticket_id, owner, zoho_status FROM tickets "
+            "WHERE zoho_status != ? AND ticket_id != '' ORDER BY id",
+            (settings.reply_close_status,)).fetchall()
 
-    run_started = datetime.now(settings.tz).isoformat()
+    cap = max_tickets if max_tickets else settings.status_max_tickets_per_run
+    batch = rows[:cap]
+    checked = 0
     changed = 0
     started = time.time()
-    cleanly_reached_cutoff = False
-
-    for page in range(settings.status_max_list_pages):
+    for row in batch:
         if time.time() - started > 270:  # stay well inside a reasonable execution budget
             break
-        tickets = zoho.tickets_page(from_=page * 100, limit=100)
-        if not tickets:
-            cleanly_reached_cutoff = True
-            break
-        page_reached_cutoff = False
-        with get_conn() as c:
-            for t in tickets:
-                mod = _parse_iso(t.get("modifiedTime") or t.get("createdTime"))
-                if mod < cutoff:
-                    page_reached_cutoff = True
-                    continue
-                number = str(t["ticketNumber"])
-                if number not in by_number:
-                    continue
-                owner = zoho.owner_label(t)
-                status = t.get("status", "")
-                cur = c.execute(
-                    "UPDATE tickets SET owner=?, zoho_status=? WHERE id=? AND (owner != ? OR zoho_status != ?)",
-                    (owner, status, by_number[number], owner, status))
-                changed += cur.rowcount
-        if page_reached_cutoff or len(tickets) < 100:
-            cleanly_reached_cutoff = True
-            break
+        t = zoho.ticket_full(row["ticket_id"])
+        checked += 1
+        if not t:
+            continue
+        owner = zoho.owner_label(t)
+        status = t.get("status", "")
+        if owner != row["owner"] or status != row["zoho_status"]:
+            with get_conn() as c:
+                c.execute("UPDATE tickets SET owner=?, zoho_status=? WHERE id=?",
+                         (owner, status, row["id"]))
+            changed += 1
 
-    if cleanly_reached_cutoff:
-        set_state(STATUS_SYNC_KEY, run_started)
-
-    return {"changed": changed}
+    set_state(STATUS_SYNC_KEY, datetime.now(settings.tz).isoformat())
+    return {"checked": checked, "changed": changed, "remaining": len(rows) - checked}
