@@ -621,8 +621,8 @@ def refresh_statuses(max_tickets: int | None = None) -> dict:
     on the same head of the list."""
     with get_conn() as c:
         rows = c.execute(
-            "SELECT id, ticket_id, owner, zoho_status FROM tickets "
-            "WHERE zoho_status != ? AND ticket_id != '' ORDER BY id",
+            "SELECT id, ticket, ticket_id, owner, zoho_status FROM tickets "
+            "WHERE zoho_status != ? ORDER BY id",
             (settings.reply_close_status,)).fetchall()
 
     cap = max_tickets if max_tickets else settings.status_max_tickets_per_run
@@ -633,20 +633,43 @@ def refresh_statuses(max_tickets: int | None = None) -> dict:
     for row in batch:
         if time.time() - started > 270:  # stay well inside a reasonable execution budget
             break
-        t = zoho.ticket_full(row["ticket_id"])
         checked += 1
-        if not t:
-            continue
-        owner = zoho.owner_label(t)
-        status = t.get("status", "")
-        if owner != row["owner"] or status != row["zoho_status"]:
-            with get_conn() as c:
-                c.execute("UPDATE tickets SET owner=?, zoho_status=? WHERE id=?",
-                         (owner, status, row["id"]))
+        if _refresh_one(row):
             changed += 1
 
     set_state(STATUS_SYNC_KEY, datetime.now(settings.tz).isoformat())
     return {"checked": checked, "changed": changed, "remaining": len(rows) - checked}
+
+
+def _refresh_one(row) -> bool:
+    """Fetches one tracked ticket's live status/owner and writes it back if
+    it differs; True if it changed. `row` needs id, ticket, ticket_id,
+    owner, zoho_status.
+
+    A row with no stored ticket_id (found 8 Oct 2026 via #939792: 983 of
+    1,003 local rows -- everything migrated from the sheet, whose migration
+    never recorded one) was previously skipped outright by both
+    refresh_statuses() and the full audit's per-ticket phase, so a ticket
+    like that stayed stale forever. Now EVERY row is looked up by NUMBER
+    (zoho.ticket_by_number, one call) -- same weight as ticket_full() but
+    confirmed live to draw from the huge quota pool (~941,000 remaining)
+    rather than ticket_full()'s scarce one (~7,500) -- and a missing id is
+    filled in from the hit while we're there."""
+    t = zoho.ticket_by_number(row["ticket"])
+    if not t:
+        return False
+    found_id = str(t["id"]) if not row["ticket_id"] and t.get("id") else None
+    owner = zoho.owner_label(t)
+    status = t.get("status", "")
+    if owner == row["owner"] and status == row["zoho_status"] and not found_id:
+        return False
+    with get_conn() as c:
+        if found_id:
+            c.execute("UPDATE tickets SET owner=?, zoho_status=?, ticket_id=? WHERE id=?",
+                     (owner, status, found_id, row["id"]))
+        else:
+            c.execute("UPDATE tickets SET owner=?, zoho_status=? WHERE id=?", (owner, status, row["id"]))
+    return owner != row["owner"] or status != row["zoho_status"]
 
 
 def full_status_audit() -> dict:
@@ -670,7 +693,7 @@ def full_status_audit() -> dict:
     tracked set spans much further back than that in each department's
     full history.
 
-    Phase 2 -- for whatever phase 1 didn't reach, one ticket_full() call
+    Phase 2 -- for whatever phase 1 didn't reach, one search-by-number call
     each (the same per-ticket approach refresh_statuses() uses), rotating
     through the full tracked set across successive runs via a persistent
     cursor (FULL_AUDIT_FALLBACK_CURSOR_KEY, by row id, wrapping around)
@@ -724,12 +747,12 @@ def full_status_audit() -> dict:
     with get_conn() as c:
         candidates = c.execute(
             "SELECT id, ticket, ticket_id, owner, zoho_status FROM tickets "
-            "WHERE id > ? AND ticket_id != '' ORDER BY id LIMIT ?",
+            "WHERE id > ? ORDER BY id LIMIT ?",
             (last_id, settings.full_audit_fallback_max_per_run)).fetchall()
         if len(candidates) < settings.full_audit_fallback_max_per_run:
             wrapped = c.execute(
                 "SELECT id, ticket, ticket_id, owner, zoho_status FROM tickets "
-                "WHERE id <= ? AND ticket_id != '' ORDER BY id LIMIT ?",
+                "WHERE id <= ? ORDER BY id LIMIT ?",
                 (last_id, settings.full_audit_fallback_max_per_run - len(candidates))).fetchall()
             candidates = list(candidates) + list(wrapped)
 
@@ -741,16 +764,8 @@ def full_status_audit() -> dict:
             continue  # phase 1 already confirmed this one fresh, this same run
         if time.time() - started > 270:
             break
-        t = zoho.ticket_full(row["ticket_id"])
         fallback_checked += 1
-        if not t:
-            continue
-        owner = zoho.owner_label(t)
-        status = t.get("status", "")
-        if owner != row["owner"] or status != row["zoho_status"]:
-            with get_conn() as c:
-                c.execute("UPDATE tickets SET owner=?, zoho_status=? WHERE id=?",
-                         (owner, status, row["id"]))
+        if _refresh_one(row):
             changed += 1
     set_state(FULL_AUDIT_FALLBACK_CURSOR_KEY, str(last_seen_id))
 

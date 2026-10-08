@@ -110,6 +110,18 @@ def ticket_id_for_number(ticket_number: str) -> str | None:
     return str(hit["id"]) if hit and hit.get("id") else None
 
 
+def ticket_by_number(ticket_number: str) -> dict | None:
+    """The ticket itself (id, status, assigneeId, departmentId, ...) from a
+    single search by NUMBER -- for a tracked row with no stored Zoho id (983
+    of 1,003 locally: sheet-migrated rows never recorded one), where
+    ticket_full() has nothing to be called with. One call, and the hit
+    already carries everything a status/owner check needs, so no second
+    ticket_full() is needed after it."""
+    body = get(f"/tickets/search?ticketNumber={ticket_number}&limit=1")
+    data = (body or {}).get("data") or []
+    return data[0] if data else None
+
+
 def ticket(ticket_id: str) -> dict | None:
     return get(f"/tickets/{ticket_id}")
 

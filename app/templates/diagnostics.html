@@ -73,7 +73,7 @@
   </form>
   <form method="post" action="/admin/sync/statuses" class="actions">
     <button>Refresh ticket statuses/owners now</button>
-    <span class="small mute">Re-checks every ticket in the database not already marked Closed, directly by id (capped at {{ settings.status_max_tickets_per_run }} per run, oldest-tracked first). Also runs as part of the 3x/day sync.</span>
+    <span class="small mute">Re-checks every ticket in the database not already marked Closed, one search-by-number call each (capped at {{ settings.status_max_tickets_per_run }} per run, oldest-tracked first). Also runs as part of the 3x/day sync.</span>
   </form>
   <form method="post" action="/admin/sync/statuses/full-audit" class="actions">
     <button>Run full status audit (all tickets)</button>
