@@ -82,7 +82,7 @@
   <form method="post" action="/admin/sync/refunds" class="actions"
         onsubmit="return confirm('Run this only AFTER \'Migrate sheet rows into the database\' above has been run at least once. Running it first would insert rows with blank trigger/sent state for refunds that were actually already sent from the sheet, risking a learner being emailed twice. Continue?')">
     <button>Run refund intake now</button>
-    <span class="small mute">Mirrors new rows from Refund_Clean into the refunds table. Needs the unattended sync identity above to have signed into this app at least once. Run the migration above FIRST — see the confirm prompt.</span>
+    <span class="small mute">Mirrors Refund_Clean into the refunds table (also runs every 15 min): adds new rows, updates a not-yet-emailed row whose values were edited in the sheet, and removes a not-yet-emailed row the sheet no longer has (max {{ settings.rf_mirror_max_removals }} per run, otherwise it removes none and logs a warning). Emailed rows are never touched. Every update/removal is in the Activity log. Needs the unattended sync identity above to have signed into this app at least once. Run the migration above FIRST — see the confirm prompt.</span>
   </form>
   <form method="post" action="/admin/sync/refunds/resync-unsent" class="actions"
         onsubmit="return confirm('Re-pull every column (name, phone, group, reason, funnel, community, amount) from Refund_Clean for every refund row NOT yet emailed, matched by Source Key? A row already emailed is never touched, no matter what. Continue?')">

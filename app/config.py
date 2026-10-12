@@ -371,6 +371,10 @@ class Settings:
     rf_source_sheet_id: str = _get("RF_SOURCE_SHEET_ID", "1WfKaoIbJGMMLBsHq981DrW85Iz1W1Q7gfeSdqwX8xhU")
     rf_source_tab: str = _get("RF_SOURCE_TAB", "Refund_Clean")
     rf_since_iso: str = _get("RF_SINCE_ISO", "2026-09-01T00:00:00")
+    # Most not-yet-emailed rows the automatic refund intake will remove in one
+    # run for no longer being in Refund_Clean; past this it removes none and
+    # warns instead (a bad/partial sheet read must never wipe rows).
+    rf_mirror_max_removals: int = _int("RF_MIRROR_MAX_REMOVALS", 5)
     rf_sync_interval_minutes: int = _int("RF_SYNC_INTERVAL_MINUTES", 15)
 
     # --- Unattended background jobs ------------------------------------------
