@@ -64,7 +64,9 @@
     <form method="post" action="/refunds/{{ r.row }}/trigger" class="inline">
       <input type="hidden" name="back_to" value="{{ here }}">
       <select name="value" class="trig {{ r.trigger | lower }}"
-              onchange="if (this.value.toLowerCase() === 'yes' && !{{ 'true' if r.sent else 'false' }}) { if (!confirm('Approve row {{ r.row }} ({{ r.name }})?\n\nZoho email to {{ r.email }}{% if not r.no_order %}, then tracker row + Doc + finance email from {{ user.email }}{% endif %}.')) { this.value = this.dataset.was; return; } } this.form.submit();"
+              onchange="if (this.value === 'Duplicate') { if (!confirm('Mark row {{ r.row }} ({{ r.name }}) as a duplicate?
+
+It moves to the Duplicate tab and leaves this list. You can restore it from there.')) { this.value = this.dataset.was; return; } } if (this.value.toLowerCase() === 'yes' && !{{ 'true' if r.sent else 'false' }}) { if (!confirm('Approve row {{ r.row }} ({{ r.name }})?\n\nZoho email to {{ r.email }}{% if not r.no_order %}, then tracker row + Doc + finance email from {{ user.email }}{% endif %}.')) { this.value = this.dataset.was; return; } } this.form.submit();"
               data-was="{{ r.trigger }}">
         <option value="" {{ 'selected' if not r.trigger }}></option>
         {% for o in trigger_options %}<option value="{{ o }}" {{ 'selected' if r.trigger == o }}>{{ o }}</option>{% endfor %}

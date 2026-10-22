@@ -25,7 +25,7 @@ from . import course_master, google, migrate, refund_intake, refunds, replies, s
 from .config import RF_CURRENCY, settings
 from .db import get_conn, get_state, init_db
 from .store import (MAIN_EDITABLE, MAIN_HEADERS, REFUND_CSV_HEADER, REFUND_EDITABLE, REFUND_HEADERS,
-                    STATUS_FALLBACK, TICKET_CSV_HEADER, TRIGGER_FALLBACK, create_test_refund,
+                    DUPLICATE_TRIGGER, REFUND_TRIGGER_OPTIONS, STATUS_FALLBACK, TICKET_CSV_HEADER, TRIGGER_FALLBACK, create_test_refund,
                     create_test_ticket, delete_refund, delete_ticket, is_internal, load_refund,
                     load_refunds, load_ticket, load_tickets, parse_amount, refund_csv_row,
                     save_main_fields, save_refund_fields, ticket_csv_row, write_refund)
@@ -263,7 +263,8 @@ def dashboard(request: Request, u: User = Depends(require_superuser)):
     with get_conn() as c:
         tickets = c.execute("SELECT created_at, course, category, trigger_value, sent_at, "
                             "brand, owner, zoho_status FROM tickets").fetchall()
-        refunds = c.execute("SELECT timestamp_at, community, amount FROM refunds").fetchall()
+        refunds = c.execute("SELECT timestamp_at, community, amount FROM refunds "
+                            "WHERE LOWER(TRIM(trigger_value)) != 'duplicate'").fetchall()
 
     ticket_data = []
     for t in tickets:
@@ -313,7 +314,7 @@ def _filtered_refunds(request: Request, is_superuser: bool = False) -> tuple[lis
     if view == "stale" and not is_superuser:
         view = "open"
     q = request.query_params.get("q", "").strip().lower()
-    rows = load_refunds()
+    rows = [r for r in load_refunds() if not r.is_duplicate]
     if view == "open":
         rows = [r for r in rows if not r.sent]
     elif view == "sent":
@@ -331,7 +332,7 @@ def _filtered_refunds(request: Request, is_superuser: bool = False) -> tuple[lis
 def refunds_list(request: Request, u: User = Depends(require_user)):
     rows, view, q = _filtered_refunds(request, is_superuser=u.is_superuser)
     return render(request, "refunds.html", view=view, q=q, headers=REFUND_HEADERS,
-                  trigger_options=TRIGGER_FALLBACK,
+                  trigger_options=REFUND_TRIGGER_OPTIONS,
                   **paginate(request, rows))
 
 
@@ -380,6 +381,17 @@ def _apply_refund_trigger(g: google.GoogleClient, u: User, row: int, value: str)
     r = load_refund(row)
     if not r:
         return f"Row {row} is empty", False
+    if value.lower() == DUPLICATE_TRIGGER.lower():
+        if r.sent:
+            return (f"Row {row} was already emailed, so it can't be marked Duplicate — "
+                    "the record of what was sent stays on the Refunds tab."), False
+        if r.is_duplicate:
+            return f"Row {row}: already in the Duplicate tab.", True
+        write_refund(row, "trigger", DUPLICATE_TRIGGER)
+        log_action(u, "refund_duplicate", f"row {row}", f"{r.name} <{r.email}> {r.community} {r.amount}")
+        return f"Row {row} ({r.name}) moved to the Duplicate tab.", True
+    if r.is_duplicate and value.lower() == "yes":
+        return f"Row {row} is marked Duplicate — restore it from the Duplicate tab before approving.", False
     if value.lower() == "yes" and not r.sent:
         first, second = refunds.approve(g, row, u.display, u.email)
         msg = "Learner: " + first.message + (f" · Team: {second.message}" if second else "")
@@ -428,6 +440,28 @@ def refund_new(name: str = Form(""), email: str = Form(""), phone: str = Form(""
     return RedirectResponse(f"/refunds/{row}?msg={quote('Test entry added.')}&ok=1", status_code=303)
 
 
+@app.get("/duplicates", response_class=HTMLResponse)
+def duplicates_list(request: Request, u: User = Depends(require_user)):
+    """Refund entries marked Duplicate (22 Oct 2026) — taken off the Refunds
+    tab but kept, so the form intake never re-imports them as new."""
+    q = request.query_params.get("q", "").strip().lower()
+    rows = [r for r in load_refunds() if r.is_duplicate]
+    if q:
+        rows = [r for r in rows if q in (r.name + " " + r.email + " " + r.community + " " + r.phone).lower()]
+    rows.reverse()
+    return render(request, "duplicates.html", q=q, headers=REFUND_HEADERS, **paginate(request, rows))
+
+
+@app.post("/refunds/{row}/restore")
+def refund_restore(row: int, u: User = Depends(require_editor)):
+    r = load_refund(row)
+    if not r or not r.is_duplicate:
+        return back("/duplicates", f"Row {row} is not in the Duplicate tab.", False)
+    write_refund(row, "trigger", "")
+    log_action(u, "refund_duplicate_restore", f"row {row}", f"{r.name} <{r.email}> {r.community} {r.amount}")
+    return back("/duplicates", f"Row {row} ({r.name}) restored to the Refunds tab.", True)
+
+
 @app.get("/refunds/{row}", response_class=HTMLResponse)
 def refund_detail(request: Request, row: int, u: User = Depends(require_user)):
     r = load_refund(row)
@@ -442,7 +476,7 @@ def refund_detail(request: Request, row: int, u: User = Depends(require_user)):
             tracker_lookup = {"error": str(e)}
     return render(request, "refund_detail.html", r=r,
                   headers=REFUND_HEADERS,
-                  trigger_options=TRIGGER_FALLBACK,
+                  trigger_options=REFUND_TRIGGER_OPTIONS,
                   blockers=r.blockers(),
                   learner_subject=refunds.learner_subject(r),
                   learner_html=refunds.learner_email_html(r),
@@ -454,6 +488,9 @@ def refund_detail(request: Request, row: int, u: User = Depends(require_user)):
 
 @app.post("/refunds/{row}/approve")
 def refund_approve(row: int, u: User = Depends(require_editor)):
+    dup = load_refund(row)
+    if dup and dup.is_duplicate:
+        return back(f"/refunds/{row}", "This row is marked Duplicate — restore it from the Duplicate tab first.", False)
     g = gclient(u)
     first, second = refunds.approve(g, row, u.display, u.email)
     msg = ("Learner: " + first.message) + (f" · Team: {second.message}" if second else "")
@@ -934,7 +971,7 @@ def api_refunds_json(request: Request):
     sent = (request.headers.get("x-api-key") or "").strip()
     if not sent or sent != key:
         raise HTTPException(status_code=401, detail="a valid X-Api-Key header is required")
-    rows = load_refunds()
+    rows = [r for r in load_refunds() if not r.is_duplicate]
     out = []
     for r in rows:
         out.append({

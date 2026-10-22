@@ -20,6 +20,11 @@ INTERNAL_DOMAINS = {"lawsikho.com", "lawsikho.in", "skillarbitra.ge",
                     "skillarbitrage.ge", "addictivelearn.com", "ipleaders.in"}
 
 TRIGGER_FALLBACK = ["Yes", "Pending", "NA"]
+# Refunds only (22 Oct 2026): "Duplicate" moves the row to the Duplicate tab and
+# out of the Refunds list. The row stays in the database (so the form intake
+# never re-imports it as new) — it is just filtered by this trigger value.
+DUPLICATE_TRIGGER = "Duplicate"
+REFUND_TRIGGER_OPTIONS = TRIGGER_FALLBACK + [DUPLICATE_TRIGGER]
 STATUS_FALLBACK = ["Pending", "Approved"]
 
 RF_NO_ORDER = "No order found"
@@ -252,6 +257,10 @@ class RefundRow:
     @property
     def sent(self) -> bool:
         return bool(self.sent_at)
+
+    @property
+    def is_duplicate(self) -> bool:
+        return self.trigger.strip().lower() == DUPLICATE_TRIGGER.lower()
 
     @property
     def pending(self) -> bool:

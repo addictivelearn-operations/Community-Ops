@@ -92,6 +92,7 @@ select { font:inherit; padding:4px 8px; border:1px solid var(--line); border-rad
 select.trig.yes { background:#e8f7f0; border-color:#9fdcc0; color:#0b6b48; font-weight:600; }
 select.trig.pending { background:#fff6e0; border-color:#f2dfa6; color:#7a4d00; }
 select.trig.na { background:#eef0f4; color:var(--mute); }
+select.trig.duplicate { background:#fdeaea; border-color:#f2b8b8; color:#8a1f1f; }
 .kv textarea { min-height:60px; }
 
 /* inline cell editing on the list */
