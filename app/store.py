@@ -20,9 +20,9 @@ INTERNAL_DOMAINS = {"lawsikho.com", "lawsikho.in", "skillarbitra.ge",
                     "skillarbitrage.ge", "addictivelearn.com", "ipleaders.in"}
 
 TRIGGER_FALLBACK = ["Yes", "Pending", "NA"]
-# Refunds only (22 Oct 2026): "Duplicate" moves the row to the Duplicate tab and
-# out of the Refunds list. The row stays in the database (so the form intake
-# never re-imports it as new) — it is just filtered by this trigger value.
+# Refunds only (22 Oct 2026): "Duplicate" is an ACTION, not a stored value --
+# choosing it moves the row out of `refunds` into `duplicate_refunds`
+# (move_refund_to_duplicates), after which it exists only on the Duplicate tab.
 DUPLICATE_TRIGGER = "Duplicate"
 REFUND_TRIGGER_OPTIONS = TRIGGER_FALLBACK + [DUPLICATE_TRIGGER]
 STATUS_FALLBACK = ["Pending", "Approved"]
@@ -249,6 +249,8 @@ class RefundRow:
     # reserved/empty slack on the sheet (HANDOVER.txt §3) and carry nothing.
     spare_l: str = ""
     spare_m: str = ""
+    moved_at: str = ""   # only set on Duplicate-tab entries
+    moved_by: str = ""
 
     @property
     def no_order(self) -> bool:
@@ -257,10 +259,6 @@ class RefundRow:
     @property
     def sent(self) -> bool:
         return bool(self.sent_at)
-
-    @property
-    def is_duplicate(self) -> bool:
-        return self.trigger.strip().lower() == DUPLICATE_TRIGGER.lower()
 
     @property
     def pending(self) -> bool:
@@ -313,6 +311,59 @@ def load_refunds() -> list[RefundRow]:
     with get_conn() as c:
         rows = c.execute("SELECT * FROM refunds ORDER BY id").fetchall()
     return [_refund_row(r) for r in rows]
+
+
+def load_duplicates() -> list[RefundRow]:
+    with get_conn() as c:
+        rows = c.execute("SELECT * FROM duplicate_refunds ORDER BY id").fetchall()
+    out = []
+    for r in rows:
+        d = _refund_row(r)
+        d.moved_at, d.moved_by = fmt_dt(r["moved_at"]), r["moved_by"]
+        out.append(d)
+    return out
+
+
+def duplicate_keys() -> set[str]:
+    """Source Keys of every entry on the Duplicate tab -- refund intake checks
+    these alongside refunds' own before importing, so a duplicate is never
+    re-imported as new."""
+    return {r.key for r in load_duplicates()}
+
+
+_MOVE_COLS = ("timestamp_at, name, email, phone, group_name, reason, funnel, funnel_final, "
+              "community, amount, trigger_value, sent_at, sent_by, result, handoff")
+
+
+def move_refund_to_duplicates(row: int, by: str) -> bool:
+    """Moves one NOT-yet-emailed refund out of `refunds` into
+    `duplicate_refunds` in a single transaction. False if the row is gone or
+    has already been emailed (that record of what was sent stays put)."""
+    with get_conn() as c:
+        r = c.execute("SELECT sent_at FROM refunds WHERE id=?", (row,)).fetchone()
+        if not r or r["sent_at"]:
+            return False
+        c.execute(f"INSERT INTO duplicate_refunds ({_MOVE_COLS}, moved_at, moved_by) "
+                  f"SELECT {_MOVE_COLS}, ?, ? FROM refunds WHERE id=?", (now_iso(), by, row))
+        c.execute("DELETE FROM refunds WHERE id=?", (row,))
+    _nudge_tracker(f"refund row {row} moved to Duplicate")
+    return True
+
+
+def restore_duplicate(dup_id: int) -> int | None:
+    """Moves an entry back from the Duplicate tab onto `refunds` (trigger
+    cleared). Returns its NEW refund row number -- it gets a fresh one, since
+    the old row number was freed when it was moved."""
+    with get_conn() as c:
+        r = c.execute("SELECT id FROM duplicate_refunds WHERE id=?", (dup_id,)).fetchone()
+        if not r:
+            return None
+        cols = _MOVE_COLS.replace("trigger_value", "''")
+        cur = c.execute(f"INSERT INTO refunds ({_MOVE_COLS}) SELECT {cols} FROM duplicate_refunds WHERE id=?", (dup_id,))
+        new_id = cur.lastrowid
+        c.execute("DELETE FROM duplicate_refunds WHERE id=?", (dup_id,))
+    _nudge_tracker(f"refund restored from Duplicate as row {new_id}")
+    return new_id
 
 
 def load_refund(row: int) -> RefundRow | None:

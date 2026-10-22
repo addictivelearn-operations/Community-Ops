@@ -61,6 +61,32 @@ CREATE TABLE IF NOT EXISTS refunds (
     handoff       TEXT NOT NULL DEFAULT ''
 );
 
+-- Refund entries marked Duplicate (22 Oct 2026): moved OUT of `refunds`
+-- entirely, so they appear nowhere on the Refunds side (list, filters,
+-- counts, exports, the tracker feed). Same columns as refunds, plus who/when
+-- it was moved. Refund intake checks this table as well as `refunds` before
+-- importing a sheet row, so a duplicate is never re-imported as new.
+CREATE TABLE IF NOT EXISTS duplicate_refunds (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp_at  TEXT NOT NULL DEFAULT '',
+    name          TEXT NOT NULL DEFAULT '',
+    email         TEXT NOT NULL DEFAULT '',
+    phone         TEXT NOT NULL DEFAULT '',
+    group_name    TEXT NOT NULL DEFAULT '',
+    reason        TEXT NOT NULL DEFAULT '',
+    funnel        TEXT NOT NULL DEFAULT '',
+    funnel_final  TEXT NOT NULL DEFAULT '',
+    community     TEXT NOT NULL DEFAULT '',
+    amount        TEXT NOT NULL DEFAULT '',
+    trigger_value TEXT NOT NULL DEFAULT '',
+    sent_at       TEXT NOT NULL DEFAULT '',
+    sent_by       TEXT NOT NULL DEFAULT '',
+    result        TEXT NOT NULL DEFAULT '',
+    handoff       TEXT NOT NULL DEFAULT '',
+    moved_at      TEXT NOT NULL DEFAULT '',  -- ISO
+    moved_by      TEXT NOT NULL DEFAULT ''   -- email
+);
+
 -- Port of the _LearnerCache hidden sheet (06_LearnerCache.gs): fills gaps for
 -- a learner who raises another ticket later, merging non-empty values so a
 -- ticket that only reveals the phone doesn't erase a known course.
@@ -160,11 +186,26 @@ def _migrate(conn: sqlite3.Connection) -> None:
             conn.execute(ddl)
 
 
+def _move_legacy_duplicates(conn: sqlite3.Connection) -> None:
+    """An earlier version of the Duplicate feature (same day) only set
+    trigger_value = 'Duplicate' on the refunds row. Moves any such row into
+    duplicate_refunds, so a database that already has some ends up in the
+    same state as a fresh one. A no-op once none are left."""
+    cols = ("timestamp_at, name, email, phone, group_name, reason, funnel, funnel_final, community, "
+            "amount, trigger_value, sent_at, sent_by, result, handoff")
+    where = "LOWER(TRIM(trigger_value)) = 'duplicate' AND sent_at = ''"
+    if conn.execute(f"SELECT COUNT(*) FROM refunds WHERE {where}").fetchone()[0]:
+        conn.execute(f"INSERT INTO duplicate_refunds ({cols}, moved_at, moved_by) "
+                     f"SELECT {cols}, datetime('now'), 'migrated' FROM refunds WHERE {where}")
+        conn.execute(f"DELETE FROM refunds WHERE {where}")
+
+
 def init_db() -> None:
     conn = _connect()
     try:
         conn.executescript(SCHEMA)
         _migrate(conn)
+        _move_legacy_duplicates(conn)
         conn.commit()
     finally:
         conn.close()

@@ -24,7 +24,7 @@ from .db import get_conn, get_state
 from .google import GoogleClient
 from .legacy_sheets import cell, col_letter, serial_to_dt
 from .migrate import REFUNDS_MIGRATED_KEY
-from .store import delete_refund, load_refunds
+from .store import delete_refund, duplicate_keys, load_refunds
 
 SOURCE_LAST_COL = 10  # A..J
 
@@ -99,7 +99,9 @@ def run() -> dict:
         return {"inserted": 0, "skipped_old": 0}
 
     cutoff = _cutoff()
-    existing_keys = {r.key for r in load_refunds()}
+    # Refunds AND the Duplicate tab: an entry marked Duplicate is not on `refunds`
+    # any more, but must never be re-imported as if it were new.
+    existing_keys = {r.key for r in load_refunds()} | duplicate_keys()
 
     inserted = 0
     skipped_old = 0

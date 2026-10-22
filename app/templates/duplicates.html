@@ -2,22 +2,22 @@
 {% block title %}Duplicate · Community Ops{% endblock %}
 {% block body %}
 {% set base = "/duplicates?q=" ~ (q | urlencode) %}
-<h1>Duplicate refund entries <span class="mute small">— marked Duplicate on the Refunds tab</span></h1>
+<h1>Duplicate refund entries <span class="mute small">— moved here from the Refunds tab</span></h1>
 <div class="tabs">
   <form method="get" action="/duplicates" style="display:inline-block">
     <input name="q" value="{{ q }}" placeholder="name, email, community, phone" class="search">
   </form>
 </div>
-<p class="small mute">These entries were taken off the Refunds tab. They are kept here (not deleted), so the form sync does not bring them back as new.
-  {% if can_edit %}<b>Restore</b> puts an entry back on the Refunds tab, with its trigger cleared.{% endif %}</p>
+<p class="small mute">These entries are no longer on the Refunds tab. The form sync checks this tab as well as Refunds before importing, so they do not come back as new.
+  {% if can_edit %}<b>Restore</b> moves an entry back to the Refunds tab (with a new row number, trigger cleared).{% endif %}</p>
 {% include "_pager.html" %}
 <div class="scroll">
 <table class="grid" style="min-width:0">
-<thead><tr><th>Row</th><th>Submitted</th><th>Name</th><th>Email</th><th>Phone</th><th>Group (form)</th><th>Reason</th><th>Funnel</th><th>Community</th><th>Amount</th>{% if can_edit %}<th></th>{% endif %}</tr></thead>
+<thead><tr><th>#</th><th>Submitted</th><th>Name</th><th>Email</th><th>Phone</th><th>Group (form)</th><th>Reason</th><th>Funnel</th><th>Community</th><th>Amount</th><th>Moved</th>{% if can_edit %}<th></th>{% endif %}</tr></thead>
 <tbody>
 {% for r in rows %}
 <tr>
-  <td><a href="/refunds/{{ r.row }}">{{ r.row }}</a></td>
+  <td>{{ r.row }}</td>
   <td class="nowrap">{{ r.timestamp }}</td>
   <td>{{ r.name }}</td>
   <td>{{ r.email }}</td>
@@ -27,17 +27,18 @@
   <td class="clip" title="{{ r.funnel }}">{{ r.funnel }}</td>
   <td class="clip" title="{{ r.community }}">{{ r.community }}</td>
   <td>{{ r.amount }}</td>
+  <td class="nowrap small mute" title="{{ r.moved_by }}">{{ r.moved_at }}</td>
   {% if can_edit %}
   <td>
-    <form method="post" action="/refunds/{{ r.row }}/restore" class="inline"
-          onsubmit="return confirm('Restore row {{ r.row }} ({{ r.name }}) to the Refunds tab?')">
+    <form method="post" action="/duplicates/{{ r.row }}/restore" class="inline"
+          onsubmit="return confirm('Restore {{ r.name }} to the Refunds tab?')">
       <button type="submit">Restore</button>
     </form>
   </td>
   {% endif %}
 </tr>
 {% else %}
-<tr><td colspan="{{ 11 if can_edit else 10 }}" class="mute">No duplicate entries.</td></tr>
+<tr><td colspan="{{ 12 if can_edit else 11 }}" class="mute">No duplicate entries.</td></tr>
 {% endfor %}
 </tbody>
 </table>
