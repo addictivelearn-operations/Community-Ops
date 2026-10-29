@@ -336,12 +336,14 @@ _MOVE_COLS = ("timestamp_at, name, email, phone, group_name, reason, funnel, fun
 
 
 def move_refund_to_duplicates(row: int, by: str) -> bool:
-    """Moves one NOT-yet-emailed refund out of `refunds` into
-    `duplicate_refunds` in a single transaction. False if the row is gone or
-    has already been emailed (that record of what was sent stays put)."""
+    """Moves one refund out of `refunds` into `duplicate_refunds` in a single
+    transaction -- including one that has already been emailed (29 Oct 2026):
+    sent_at / sent_by / result / handoff are copied along, so the record of
+    what was sent survives, and a Restore brings it back still marked sent
+    (it can't be approved again). False if the row is gone."""
     with get_conn() as c:
-        r = c.execute("SELECT sent_at FROM refunds WHERE id=?", (row,)).fetchone()
-        if not r or r["sent_at"]:
+        r = c.execute("SELECT id FROM refunds WHERE id=?", (row,)).fetchone()
+        if not r:
             return False
         c.execute(f"INSERT INTO duplicate_refunds ({_MOVE_COLS}, moved_at, moved_by) "
                   f"SELECT {_MOVE_COLS}, ?, ? FROM refunds WHERE id=?", (now_iso(), by, row))

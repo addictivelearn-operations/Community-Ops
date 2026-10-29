@@ -382,13 +382,11 @@ def _apply_refund_trigger(g: google.GoogleClient, u: User, row: int, value: str)
     if not r:
         return f"Row {row} is empty", False
     if value.lower() == DUPLICATE_TRIGGER.lower():
-        if r.sent:
-            return (f"Row {row} was already emailed, so it can't be marked Duplicate — "
-                    "the record of what was sent stays on the Refunds tab."), False
         if not move_refund_to_duplicates(row, u.email):
             return f"Row {row} could not be moved.", False
         log_action(u, "refund_duplicate", f"row {row}", f"{r.name} <{r.email}> {r.community} {r.amount}")
-        return f"Row {row} ({r.name}) moved to the Duplicate tab.", True
+        return (f"Row {row} ({r.name}) moved to the Duplicate tab"
+                + (" — it had already been emailed; that record moved with it." if r.sent else "."), True)
     if value.lower() == "yes" and not r.sent:
         first, second = refunds.approve(g, row, u.display, u.email)
         msg = "Learner: " + first.message + (f" · Team: {second.message}" if second else "")

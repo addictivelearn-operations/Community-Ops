@@ -193,7 +193,7 @@ def _move_legacy_duplicates(conn: sqlite3.Connection) -> None:
     same state as a fresh one. A no-op once none are left."""
     cols = ("timestamp_at, name, email, phone, group_name, reason, funnel, funnel_final, community, "
             "amount, trigger_value, sent_at, sent_by, result, handoff")
-    where = "LOWER(TRIM(trigger_value)) = 'duplicate' AND sent_at = ''"
+    where = "LOWER(TRIM(trigger_value)) = 'duplicate'"
     if conn.execute(f"SELECT COUNT(*) FROM refunds WHERE {where}").fetchone()[0]:
         conn.execute(f"INSERT INTO duplicate_refunds ({cols}, moved_at, moved_by) "
                      f"SELECT {cols}, datetime('now'), 'migrated' FROM refunds WHERE {where}")
