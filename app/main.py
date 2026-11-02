@@ -835,11 +835,49 @@ def ticket_thread(request: Request, number: str, u: User = Depends(require_user)
             who = (c["author"] or "Agent") + (" (internal note)" if cls == "prv" else " (comment)")
             tag = ""
         blocks.append({"cls": cls, "who": who, "when": c["time"], "text": c["text"],
-                       "attachments": c["attachments"], "tag": tag})
+                       "attachments": c["attachments"], "links": c.get("attachment_links", []), "tag": tag})
     blocks.reverse()
     contact = t.get("contact") or {}
     return render(request, "ticket.html", number=number, t=t, dept=dept, blocks=blocks,
                   contact=f"{contact.get('firstName', '')} {contact.get('lastName', '')}".strip())
+
+
+# Types a browser may show inline. Anything else (HTML, SVG, scripts, Office
+# files... a learner can attach anything) is forced to download instead, so a
+# hostile file can never run in this app's own origin.
+_INLINE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp", "application/pdf"}
+
+
+@app.get("/tickets/{number}/attachment/{kind}/{parent_id}/{attachment_id}")
+def ticket_attachment(number: str, kind: str, parent_id: str, attachment_id: str,
+                      u: User = Depends(require_user)):
+    """A learner's attachment, fetched with the app's own Zoho login (the
+    ticket page's links can't open Zoho's download URL directly -- it needs a
+    token the browser doesn't have). The path is built here from validated
+    pieces, never taken from the request, so this can only ever read an
+    attachment of the ticket named in the URL."""
+    if kind not in ("threads", "comments") or not (parent_id.isdigit() and attachment_id.isdigit()):
+        raise HTTPException(404)
+    ticket_id = replies.resolve_ticket_id(number)
+    if not ticket_id:
+        raise HTTPException(404, f"Ticket #{number} not found in Zoho Desk")
+    try:
+        r = zoho.attachment_content(ticket_id, kind, parent_id, attachment_id)
+    except zoho.ZohoError as e:
+        raise HTTPException(502, str(e))
+    if r.status_code != 200:
+        raise HTTPException(404, f"Zoho could not return that attachment (HTTP {r.status_code}).")
+    ctype = (r.headers.get("content-type") or "application/octet-stream").split(";")[0].strip().lower()
+    inline = ctype in _INLINE_TYPES
+    disposition = r.headers.get("content-disposition", "")
+    if not inline:
+        ctype = "application/octet-stream"
+        disposition = disposition.replace("inline", "attachment") or "attachment"
+    elif not disposition.lower().startswith("inline"):
+        disposition = "inline" + disposition[disposition.find(";"):] if ";" in disposition else "inline"
+    return Response(r.content, media_type=ctype, headers={
+        "Content-Disposition": disposition, "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "private, max-age=3600"})
 
 
 # ---------------------------------------------------------------------------

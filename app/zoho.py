@@ -313,6 +313,24 @@ def html_to_text(raw: str) -> str:
     return s.strip()
 
 
+def _attachment_links(kind: str, parent_id: str, attachments: list[dict]) -> list[dict]:
+    """What the ticket page needs to link an attachment through this app
+    (attachment_url): its id, name and size, plus which kind of entry it hangs
+    off (a thread or a comment) and that entry's id -- Zoho's download URL is
+    /tickets/<id>/<threads|comments>/<entry>/attachments/<att>/content and
+    needs the app's own token, so a learner's file can't be opened straight
+    from the ticket page without going through us."""
+    return [{"id": str(a["id"]), "name": a.get("name", "") or "attachment", "size": a.get("size") or "",
+             "kind": kind, "parent": str(parent_id)}
+            for a in attachments if a.get("id")]
+
+
+def attachment_content(ticket_id: str, kind: str, parent_id: str, attachment_id: str) -> httpx.Response:
+    """The raw file. Raises ZohoError (via _request) only on repeated
+    transport failures; a missing/denied file comes back as a non-200."""
+    return _request("GET", f"/tickets/{ticket_id}/{kind}/{parent_id}/attachments/{attachment_id}/content")
+
+
 def conversations(ticket_id: str) -> list[dict]:
     body = get(f"/tickets/{ticket_id}/conversations?limit=100") or {}
     out = []
@@ -334,6 +352,7 @@ def conversations(ticket_id: str) -> list[dict]:
                     "time": full.get("createdTime") or entry.get("createdTime") or "",
                     "text": html_to_text(full.get("content") or full.get("summary") or ""),
                     "attachments": [a.get("name", "") for a in full.get("attachments", [])],
+                    "attachment_links": _attachment_links("threads", entry["id"], full.get("attachments", [])),
                 })
             elif entry.get("type") == "comment":
                 out.append({
@@ -343,6 +362,7 @@ def conversations(ticket_id: str) -> list[dict]:
                     "time": entry.get("commentedTime") or "",
                     "text": html_to_text(entry.get("content") or ""),
                     "attachments": [a.get("name", "") for a in entry.get("attachments", [])],
+                    "attachment_links": _attachment_links("comments", entry["id"], entry.get("attachments", [])),
                 })
         except ZohoError:
             continue

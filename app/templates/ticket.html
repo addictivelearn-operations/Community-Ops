@@ -14,7 +14,21 @@
   <div class="who">{{ b.who }}{% if b.tag %}<span class="tag">{{ b.tag }}</span>{% endif %}</div>
   <div class="when">{{ zoho_time(b.when) }}</div>
   <div class="text">{{ b.text or '(empty)' }}</div>
-  {% if b.attachments %}<div class="small mute">Attachments: {{ b.attachments | join(', ') }}</div>{% endif %}
+  {% if b.links %}
+  <div class="small" style="margin-top:6px">Attachments:
+    {% for a in b.links %}
+    {% set url = "/tickets/" ~ number ~ "/attachment/" ~ a.kind ~ "/" ~ a.parent ~ "/" ~ a.id %}
+    <div style="margin:6px 0">
+      <a href="{{ url }}" target="_blank" rel="noopener">{{ a.name }}</a>{% if a.size %} <span class="mute">({{ (a.size | int / 1024) | round | int }} KB)</span>{% endif %}
+      · <a href="{{ url }}" download="{{ a.name }}">download</a>
+      {% if a.name.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp')) %}
+      <div><a href="{{ url }}" target="_blank" rel="noopener"><img src="{{ url }}" alt="{{ a.name }}" loading="lazy"
+           style="max-width:420px; max-height:300px; border:1px solid var(--line); border-radius:6px; margin-top:4px"></a></div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% elif b.attachments %}<div class="small mute">Attachments: {{ b.attachments | join(', ') }}</div>{% endif %}
 </div>
 {% else %}
 <div class="msg"><span class="mute">No conversation on this ticket.</span></div>
